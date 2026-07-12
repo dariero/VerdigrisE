@@ -1,11 +1,11 @@
 # VerdigrisE: An Inspectable RAG Mechanics Sandbox
 
-[![Python 3.14+](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/downloads/)
-[![RagaliQ 0.2.0](https://img.shields.io/badge/RagaliQ-0.2.0-7c3aed.svg)](../RagaliQ/)
-![Status: Local Sandbox](https://img.shields.io/badge/status-local%20sandbox-6b7280.svg)
+[![Python 3.14](https://img.shields.io/badge/python-3.14-blue.svg)](https://www.python.org/downloads/)
+[![RagaliQ 0.2.0](https://img.shields.io/badge/RagaliQ-0.2.0-7c3aed.svg)](https://pypi.org/project/ragaliq/0.2.0/)
+![Status: Public Sandbox](https://img.shields.io/badge/status-public%20sandbox-6b7280.svg)
 ![Evaluation: Deterministic First](https://img.shields.io/badge/evaluation-deterministic%20first-0f766e.svg)
 
-**VerdigrisE** is a local RAG sandbox built around an executable alchemical-blossom grimoire fixture. It keeps corpus strings, embedding rows, indexed metadata, top-2 retrieval, prompt bytes, generated answers, and evaluation records inspectable — **numeric source conflicts**, **near-synonym collisions**, **mandatory qualifiers**, **original-unit preservation**, and **exact abstention** all become testable failures — while preserving a direct ladder toward citation-critical technical-document systems.
+**VerdigrisE** is a public, local-first RAG sandbox built around an executable alchemical-blossom grimoire fixture. It keeps corpus strings, embedding rows, indexed metadata, top-2 retrieval, prompt bytes, generated answers, and evaluation records inspectable — **numeric source conflicts**, **near-synonym collisions**, **mandatory qualifiers**, **original-unit preservation**, and **exact abstention** all become testable failures — while preserving a direct ladder toward citation-critical technical-document systems.
 
 ---
 
@@ -36,20 +36,19 @@ Production retrieval systems can hide source attribution errors behind fluent, g
 
 ## Installation
 
-VerdigrisE requires Python 3.14+ — the inspected RagaliQ 0.2.0 checkout pins `requires-python = ">=3.14"` in its `pyproject.toml`.
+VerdigrisE supports Python 3.14 (`>=3.14,<3.15`). RagaliQ 0.2.0 sets the same minimum, and Python 3.14 is the only version resolved and tested by this sandbox.
 
-Create the environment and install dependencies from the workspace root:
+Install [uv](https://docs.astral.sh/uv/), then create and synchronize the environment from the repository root:
 
 ```bash
-# Create the exact-cased project environment
-python3.14 -m venv ./VerdigrisE/.venv
-
-# Install from the project directory so ../RagaliQ resolves to the inspected checkout
-(cd ./VerdigrisE/ && ./.venv/bin/python -m pip install --upgrade pip)
-(cd ./VerdigrisE/ && ./.venv/bin/python -m pip install -r requirements.txt)
+uv venv --python 3.14
+uv pip sync --preview-features pylock --require-hashes pylock.toml
+uv pip check
 ```
 
-`requirements.txt` builds RagaliQ non-editably from the adjacent local checkout and resolves the current major release lines of NumPy, OpenAI, Pydantic, and pytest.
+`pyproject.toml` is the abstract dependency authority: NumPy, OpenAI, and Pydantic are runtime dependencies; pytest and RagaliQ are test/evaluation dependencies. The universal, hash-bearing `pylock.toml` records the exact cross-platform environment. It was generated with uv 0.11.28 for Python 3.14, and installs the public `ragaliq==0.2.0` release rather than relying on an adjacent checkout.
+
+An editable `../RagaliQ` install is an optional maintainer-only co-development override, not the public installation contract. Re-running the locked sync command restores the published RagaliQ artifact.
 
 Set provider keys only for explicitly selected paid paths:
 
@@ -82,23 +81,21 @@ print(record.context_payload)
 print(record.answer)
 ```
 
-Run it from the workspace root after paid ingestion:
+Run it from the repository root after paid ingestion:
 
 ```bash
-PYTHONPATH=./VerdigrisE/ ./VerdigrisE/.venv/bin/python -c \
+.venv/bin/python -c \
   'from pipeline import ask; print(ask("What quantity of pearl salt and which vapor are specified for ground moonpetal?").model_dump_json(indent=2))'
 ```
 
-> **Lifecycle:** `ask()` loads `./VerdigrisE/.index/`, rejects a fixture-stale index, embeds the question separately, retrieves top-2, generates once, and returns a `RagRecord`. It makes paid OpenAI calls.
+> **Lifecycle:** `ask()` loads `.index/`, rejects a fixture-stale index, embeds the question separately, retrieves top-2, generates once, and returns a `RagRecord`. It makes paid OpenAI calls.
 
 ### Pytest Integration
 
 Run the free deterministic suite:
 
 ```bash
-./VerdigrisE/.venv/bin/python -m pytest \
-  -c ./VerdigrisE/pytest.ini \
-  ./VerdigrisE/eval/ -q
+.venv/bin/python -m pytest -c pytest.ini eval/ -q
 ```
 
 `pytest.ini` excludes both paid provider acceptance and paid native judge tests by default.
@@ -107,10 +104,10 @@ Run the free deterministic suite:
 
 ```bash
 # Paid: batch-embed the corpus and persist the validated index
-./VerdigrisE/.venv/bin/python ./VerdigrisE/pipeline.py ingest --debug
+.venv/bin/python pipeline.py ingest --debug
 
 # Paid: embed one query, retrieve top-2, and generate one answer
-./VerdigrisE/.venv/bin/python ./VerdigrisE/pipeline.py ask \
+.venv/bin/python pipeline.py ask \
   "Under GRIM-UMBRAL-BOTANY, when may a shadeglass orchid be harvested?" \
   --debug
 ```
@@ -224,9 +221,9 @@ raw corpus dictionary
 
 | Tier | Command | Calls and Ownership |
 |---|---|---|
-| Free deterministic contracts | `./VerdigrisE/.venv/bin/python -m pytest -c ./VerdigrisE/pytest.ini ./VerdigrisE/eval/ -q` | Fixed embeddings and answers, provider fakes, exact contracts, plus canned-transport RagaliQ wiring |
-| Paid all-golden OpenAI acceptance | `./VerdigrisE/.venv/bin/python -m pytest -c ./VerdigrisE/pytest.ini -o addopts='' -m "openai and not rag_test" ./VerdigrisE/eval/ -q` | One corpus embedding batch, then live retrieval and generation for every golden case |
-| Paid cross-family semantic evaluation | `./VerdigrisE/.venv/bin/python -m pytest -c ./VerdigrisE/pytest.ini -o addopts='' -m "openai and rag_test" --ragaliq-cost-limit 5.00 ./VerdigrisE/eval/ -q` | Live OpenAI answers judged by native RagaliQ Claude faithfulness and relevance |
+| Free deterministic contracts | `.venv/bin/python -m pytest -c pytest.ini eval/ -q` | Fixed embeddings and answers, provider fakes, exact contracts, plus canned-transport RagaliQ wiring |
+| Paid all-golden OpenAI acceptance | `.venv/bin/python -m pytest -c pytest.ini -o addopts='' -m "openai and not rag_test" eval/ -q` | One corpus embedding batch, then live retrieval and generation for every golden case |
+| Paid cross-family semantic evaluation | `.venv/bin/python -m pytest -c pytest.ini -o addopts='' -m "openai and rag_test" --ragaliq-cost-limit 5.00 eval/ -q` | Live OpenAI answers judged by native RagaliQ Claude faithfulness and relevance |
 
 ### Markers
 
@@ -241,12 +238,13 @@ The semantic test carries both markers because it judges live OpenAI answers. `O
 
 ## RagaliQ Integration Reference
 
-VerdigrisE inspects and installs from the sibling source checkout at `./RagaliQ/` without modifying or copying it.
+VerdigrisE installs the published `ragaliq==0.2.0` artifact from PyPI. The release's source tag resolves to the same commit whose public API was inspected for this integration.
 
 | Provenance Field | Value |
 |---|---|
-| Package source | `./RagaliQ/src/ragaliq/` |
+| Package source | [`ragaliq==0.2.0` on PyPI](https://pypi.org/project/ragaliq/0.2.0/) |
 | Package version | `0.2.0` |
+| Source tag | [`v0.2.0`](https://github.com/dariero/RagaliQ/releases/tag/v0.2.0) |
 | Inspected commit | `ac1c7ce9e38c9308736afd4400c5a9471c25255c` |
 | Free integration path | `CannedJudgeTransport -> BaseJudge -> RagaliQ` |
 | Paid integration path | Native `rag_tester` fixture with `ClaudeJudge` |
@@ -299,6 +297,7 @@ RagaliQ's native pytest plugin supplies `rag_tester`, `ClaudeJudge`, retrying tr
 
 ```
 ./VerdigrisE/
+├── .python-version              # Canonical Python 3.14 interpreter line
 ├── .env.example                 # Provider-key placeholders only
 ├── .gitignore                   # Secret, environment, index, and cache exclusions
 ├── README.md                    # Setup, contracts, commands, and boundaries
@@ -306,8 +305,9 @@ RagaliQ's native pytest plugin supplies `rag_tester`, `ClaudeJudge`, retrying tr
 ├── corpus.py                    # Corpus dictionaries and golden cases
 ├── models.py                    # RetrievedChunk, PromptMessage, and RagRecord
 ├── pipeline.py                  # Embed, index, retrieve, prompt, generate, and CLI
+├── pylock.toml                  # Universal, hash-bearing exact environment
+├── pyproject.toml               # Non-package metadata and dependency authority
 ├── pytest.ini                   # Free-default marker policy
-├── requirements.txt             # Direct dependencies and local RagaliQ source
 └── eval/
     ├── __init__.py
     ├── conftest.py              # Flat-module import boundary
@@ -322,19 +322,33 @@ The four pipeline stages are:
 3. Build the exact citation-labelled context and generation messages.
 4. Generate without rewriting the response and capture every stage in `RagRecord`.
 
-Deterministic tests construct `NumpyVectorIndex` in memory. CLI `ingest` persists it under `./VerdigrisE/.index/`; CLI `ask` reloads and validates it.
+Deterministic tests construct `NumpyVectorIndex` in memory. CLI `ingest` persists it under `.index/`; CLI `ask` reloads and validates it.
 
 ---
 
 ## Development
 
-No formatter, linter, type-checker, packaging layer, or task runner is introduced by this sandbox. The supported local validation command is the free pytest tier:
+No formatter, linter, type-checker, build backend, package-publication layer, or task runner is introduced by this sandbox. uv owns environment creation and exact dependency synchronization; the supported local validation command is the free pytest tier:
 
 ```bash
-./VerdigrisE/.venv/bin/python -m pytest \
-  -c ./VerdigrisE/pytest.ini \
-  ./VerdigrisE/eval/ -q
+.venv/bin/python -m pytest -c pytest.ini eval/ -q
 ```
+
+When dependency metadata changes, regenerate the standardized lock with the same Python policy:
+
+```bash
+uv export \
+  --format pylock.toml \
+  --all-groups \
+  --no-emit-project \
+  --python 3.14 \
+  --prerelease disallow \
+  --no-header \
+  -o pylock.toml
+rm uv.lock  # transient uv project lock; pylock.toml is the committed contract
+```
+
+The project export path preserves the selected Python minor in `pylock.toml` as `==3.14.*`. Dependency changes must update `pyproject.toml` and `pylock.toml` together.
 
 Model and provider integration remains behind explicit paid markers. A failing all-golden paid test is an acceptance result for the configured model pair, not permission to weaken a fixture expectation.
 
@@ -399,4 +413,4 @@ Because a RAG system's most dangerous failures are the ones that never surface. 
 
 ## License
 
-VerdigrisE is an unpublished local sandbox and does not ship a license file. The inspected RagaliQ dependency is MIT licensed — see [RagaliQ's LICENSE](../RagaliQ/LICENSE).
+VerdigrisE is a public source repository but does not yet ship a license file. Publication alone does not grant permission to use, modify, or redistribute VerdigrisE. The RagaliQ dependency is separately MIT licensed — see [RagaliQ's LICENSE](https://github.com/dariero/RagaliQ/blob/v0.2.0/LICENSE).
