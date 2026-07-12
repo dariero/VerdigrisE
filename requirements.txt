@@ -1,8 +1,0 @@
-# Build and install non-editably from the exact inspected local RagaliQ checkout.
-../RagaliQ
-
-# Resolve the newest release within each current major version line.
-numpy==2.*
-openai==2.*
-pydantic==2.*
-pytest==9.*

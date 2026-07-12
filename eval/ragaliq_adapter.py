@@ -1,4 +1,4 @@
-"""VerdigrisE RagaliQ adapters discovered from the local 0.2.0 source tree.
+"""VerdigrisE adapters against RagaliQ's published 0.2.0 API.
 
 RagaliQ owns semantic residue only. The deterministic suite owns exact ids,
 numbers, citations, prompt bytes, ranking, distances, and abstention.
