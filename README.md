@@ -413,4 +413,4 @@ Because a RAG system's most dangerous failures are the ones that never surface. 
 
 ## License
 
-VerdigrisE is a public source repository but does not yet ship a license file. Publication alone does not grant permission to use, modify, or redistribute VerdigrisE. The RagaliQ dependency is separately MIT licensed — see [RagaliQ's LICENSE](https://github.com/dariero/RagaliQ/blob/v0.2.0/LICENSE).
+VerdigrisE is licensed under the [MIT License](LICENSE). The RagaliQ dependency is separately MIT licensed — see [RagaliQ's LICENSE](https://github.com/dariero/RagaliQ/blob/v0.2.0/LICENSE).
