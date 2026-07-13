@@ -224,7 +224,7 @@ raw corpus dictionary
 | Tier | Command | Calls and Ownership |
 |---|---|---|
 | Free deterministic contracts | `.venv/bin/python -m pytest eval/ -q` | Fixed embeddings and answers, provider fakes, exact contracts, plus canned-transport RagaliQ wiring |
-| Free deterministic branch coverage | `.venv/bin/python -m pytest --cov --cov-report=term-missing eval/ -q` | The same free suite measures application/adapter branches and enforces the measured 70% floor |
+| Free deterministic branch coverage | `.venv/bin/python -m pytest --cov --cov-report=term-missing eval/ -q` | The same free suite measures application/adapter branches and enforces the 81% floor |
 | Paid all-golden OpenAI acceptance | `.venv/bin/python -m pytest -o addopts='' -m "openai and not rag_test" eval/ -q` | One corpus embedding batch plus seven query embeddings and seven generations: 15 nominal OpenAI requests |
 | Paid cross-family semantic evaluation | `.venv/bin/python -m pytest -o addopts='' -m "openai and rag_test" --ragaliq-cost-limit 5.00 eval/ -q` | The same 15 nominal OpenAI requests, then six answerable cases judged by native RagaliQ Claude faithfulness and relevance |
 
@@ -252,9 +252,11 @@ VerdigrisE installs the published `ragaliq==0.2.0` artifact from PyPI. The relea
 | Free integration path | `CannedJudgeTransport -> BaseJudge -> RagaliQ` |
 | Paid integration path | Native `rag_tester` fixture with `ClaudeJudge` |
 | Evaluators | `faithfulness`, `relevance` |
-| Exact context handoff | `context=[record.context_payload]` |
+| Semantic case handoff | `id`, derived `name`, `query`, `context=[record.context_payload]`, `response`, and semantic tags |
 
 Public objects used are `RagaliQ`, `RAGTestCase`, `RAGTestResult`, `BaseJudge`, `JudgeConfig`, `JudgeTransport`, `TransportResponse`, and `DEFAULT_JUDGE_MODEL`.
+
+RagaliQ 0.2.0 strips surrounding whitespace from the mapped query, response, and each context entry; the source `RagRecord` retains provider text verbatim. VerdigrisE deliberately leaves RagaliQ's `expected_answer` and `expected_facts` unset. Exact answers, facts, units, qualifiers, citations, ordering, and abstention remain deterministic pytest responsibilities.
 
 Exact signatures relied upon:
 
@@ -334,7 +336,7 @@ Deterministic query tests construct `NumpyVectorIndex` in memory. Free integrity
 
 ## Development
 
-Ruff is the repository's formatter and linter. Mypy strictly checks the application modules and RagaliQ adapter. Pytest-cov measures branch coverage over the same application/adapter scope. The free baseline is 82.36%, enforced as a clean integer `fail_under = 81`; paid provider paths remain excluded. Pre-commit runs the static tools and repository-hygiene hooks before commits. Every hook uses `uv run --no-sync` and the hash-locked `.venv`; hook execution does not create separate environments or resolve additional packages. The sandbox still has no build backend, package-publication layer, or task runner. uv owns environment creation and exact dependency synchronization.
+Ruff is the repository's formatter and linter. Mypy strictly checks the application modules and RagaliQ adapter. Pytest-cov measures branch coverage over the same application/adapter scope. The free baseline is 85.05%, enforced as a clean integer `fail_under = 81`; paid provider paths remain excluded. Pre-commit runs the static tools and repository-hygiene hooks before commits. Every hook uses `uv run --no-sync` and the hash-locked `.venv`; hook execution does not create separate environments or resolve additional packages. The sandbox still has no build backend, package-publication layer, or task runner. uv owns environment creation and exact dependency synchronization.
 
 GitHub Actions validates every ready pull request against its prospective merge result and validates `main` after each merge. CI installs the hash-locked Python 3.14 environment from a clean checkout, validates the pre-commit configuration, runs every repository hook, and runs the deterministic branch-coverage gate with OpenAI and RagaliQ paid markers explicitly excluded. Provider key variables are explicitly empty throughout the job, and the workflow does not reference provider secrets.
 
