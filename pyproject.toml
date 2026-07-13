@@ -18,6 +18,8 @@ Issues = "https://github.com/dariero/VerdigrisE/issues"
 
 [dependency-groups]
 dev = [
+    "pre-commit>=4.6.0,<5",
+    "pre-commit-hooks==6.0.0",
     "ruff>=0.15.21,<0.16",
 ]
 test = [

@@ -46,7 +46,7 @@ uv pip sync --preview-features pylock --require-hashes pylock.toml
 uv pip check
 ```
 
-`pyproject.toml` is the abstract dependency authority: NumPy, OpenAI, and Pydantic are runtime dependencies; pytest and RagaliQ are test/evaluation dependencies; Ruff is development tooling. The universal, hash-bearing `pylock.toml` records the exact cross-platform environment. It was generated with uv 0.11.28 for Python 3.14, and installs the public `ragaliq==0.2.0` release rather than relying on an adjacent checkout.
+`pyproject.toml` is the abstract dependency authority: NumPy, OpenAI, and Pydantic are runtime dependencies; pytest and RagaliQ are test/evaluation dependencies; pre-commit, pre-commit-hooks, and Ruff are development tooling. The universal, hash-bearing `pylock.toml` records the exact cross-platform environment. It was generated with uv 0.11.28 for Python 3.14, and installs the public `ragaliq==0.2.0` release rather than relying on an adjacent checkout.
 
 An editable `../RagaliQ` install is an optional maintainer-only co-development override, not the public installation contract. Re-running the locked sync command restores the published RagaliQ artifact.
 
@@ -297,6 +297,7 @@ RagaliQ's native pytest plugin supplies `rag_tester`, `ClaudeJudge`, retrying tr
 
 ```
 ./VerdigrisE/
+├── .pre-commit-config.yaml      # Ruff and repository-hygiene commit hooks
 ├── .python-version              # Canonical Python 3.14 interpreter line
 ├── .env.example                 # Provider-key placeholders only
 ├── .gitignore                   # Secret, environment, index, and cache exclusions
@@ -328,7 +329,27 @@ Deterministic tests construct `NumpyVectorIndex` in memory. CLI `ingest` persist
 
 ## Development
 
-Ruff is the repository's formatter and linter. The sandbox still has no type checker, coverage tooling, build backend, package-publication layer, task runner, pre-commit hooks, or CI integration. uv owns environment creation and exact dependency synchronization.
+Ruff is the repository's formatter and linter. Pre-commit runs Ruff and repository-hygiene hooks before commits. Every hook uses `uv run --no-sync` and the hash-locked `.venv`; hook execution does not create separate environments or resolve additional packages. The sandbox still has no type checker, coverage tooling, build backend, package-publication layer, or task runner. uv owns environment creation and exact dependency synchronization.
+
+Install the Git hook once per clone:
+
+```bash
+.venv/bin/pre-commit install
+```
+
+Run every configured hook against all tracked files:
+
+```bash
+.venv/bin/pre-commit run --all-files
+```
+
+Some hooks apply safe fixes. Review any resulting edits and rerun the command until every hook passes.
+
+After changing `.pre-commit-config.yaml`, validate its schema:
+
+```bash
+.venv/bin/pre-commit validate-config
+```
 
 Check formatting and linting without changing files:
 

@@ -8,16 +8,17 @@ description: "Publish a completed VerdigrisE change by validating the atomic dif
 1. Read `AGENTS.md`, then inspect `git status --short --branch`, the unstaged diff, the staged diff, the branch diff against `origin/main`, and recent repository history.
 2. Confirm the intended change is atomic and that unrelated user work will remain untouched. Stop if the shipping scope is ambiguous.
 3. Fetch `origin/main`. Verify that the current branch is a `codex/<short-slug>` task branch whose pull-request base is `main`; never commit on `main`. If the branch predates current `origin/main`, assess whether it must be reconciled before shipping and preserve shared history and user work.
-4. Run the free validation commands:
+4. Stage only intended paths; never use `git add -A`. Exclude `.env*`, credentials, `.index/`, caches, `.DS_Store`, editor state, and other generated files. Staging first ensures pre-commit includes intended new files in its all-files run.
+5. Run the free validation commands:
 
    ```bash
-   .venv/bin/ruff format --check .
-   .venv/bin/ruff check .
+   .venv/bin/pre-commit run --all-files
    .venv/bin/python -m pytest -c pytest.ini eval/ -q
    ```
 
+   If pre-commit modifies files, inspect the changes, restage the explicit intended paths, and rerun the command until every hook passes.
+
    Do not run a paid tier as part of shipping. Use `run-paid-evaluation` separately if the user explicitly approves one invocation.
-5. Stage only intended paths; never use `git add -A`. Exclude `.env*`, credentials, `.index/`, caches, `.DS_Store`, editor state, and other generated files.
 6. Inspect `git diff --cached`, `git diff --cached --check`, and `git diff --cached --name-only`. Verify that the staged result is complete, portable, and contains no secrets.
 7. Create one concise conventional commit consistent with repository history, without an AI attribution trailer, then push the task branch.
 8. Open a ready pull request, not a draft. Include a short outcome summary and the exact free validation command and result.

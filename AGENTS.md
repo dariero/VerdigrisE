@@ -16,7 +16,7 @@ VerdigrisE is a public, local-first sandbox for inspectable RAG mechanics. Keep 
 - Use uv for environment management. `pyproject.toml` is the abstract dependency authority; the hash-bearing `pylock.toml` is the exact public-install contract. Change them together.
 - Public clones must install the published `ragaliq` artifact. Never commit an editable sibling checkout, local path, machine-specific URL, or private package source.
 - Do not add or remove direct dependencies, change constraints, broaden the Python range, or introduce development tooling without explicit approval. Use `.agents/skills/upgrade-dependencies/SKILL.md` for approved dependency work.
-- Ruff is the configured formatter and linter. This repository has no pre-commit hooks, type checker, coverage tooling, build backend, or task runner; use only the commands documented in `README.md`.
+- Ruff is the configured formatter and linter. Pre-commit runs Ruff and repository-hygiene hooks. This repository has no type checker, coverage tooling, build backend, or task runner; use only the commands documented in `README.md`.
 
 ## Testing and paid-call safety
 
@@ -35,7 +35,7 @@ Any command that can contact OpenAI or Anthropic requires explicit approval for 
 - `main` is protected. Start task branches from current `origin/main`; use `codex/<short-slug>` for Codex work and never push directly to `main`.
 - Preserve unrelated user work. Keep commits and pull requests atomic, stage explicit paths, and exclude secrets, `.env` files, `.index/`, caches, editor files, and other generated artifacts.
 - Use a concise conventional commit subject consistent with repository history. Do not add AI attribution trailers unless requested.
-- Before shipping, run Ruff's format and lint checks, run the supported free suite, and inspect the complete staged diff.
+- Before shipping, run every pre-commit hook against all files, run the supported free suite, and inspect the complete staged diff.
 - When asked to ship, open a ready pull request, request the repository-specific Codex review below, resolve actionable findings, and enable automatic squash merge. Do not update issues, boards, labels, milestones, releases, or branches unless separately requested.
 - Use `.agents/skills/ship/SKILL.md` for the publishing workflow.
 
