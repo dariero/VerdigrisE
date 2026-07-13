@@ -6,8 +6,10 @@
 /SECURITY.md @dariero
 /.env.example @dariero
 /.gitignore @dariero
+/.python-version @dariero
 /pyproject.toml @dariero
 /pylock.toml @dariero
+/config.py @dariero
 /models.py @dariero
 /pipeline.py @dariero
 /corpus.py @dariero
