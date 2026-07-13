@@ -2,6 +2,7 @@
 
 [![Python 3.14](https://img.shields.io/badge/python-3.14-blue.svg)](https://www.python.org/downloads/)
 [![RagaliQ 0.2.0](https://img.shields.io/badge/RagaliQ-0.2.0-7c3aed.svg)](https://pypi.org/project/ragaliq/0.2.0/)
+[![CI](https://github.com/dariero/VerdigrisE/actions/workflows/ci.yml/badge.svg?branch=main&event=push)](https://github.com/dariero/VerdigrisE/actions/workflows/ci.yml)
 ![Status: Public Sandbox](https://img.shields.io/badge/status-public%20sandbox-6b7280.svg)
 ![Evaluation: Deterministic First](https://img.shields.io/badge/evaluation-deterministic%20first-0f766e.svg)
 
@@ -298,6 +299,9 @@ RagaliQ's native pytest plugin supplies `rag_tester`, `ClaudeJudge`, retrying tr
 
 ```
 ./VerdigrisE/
+├── .github/
+│   └── workflows/
+│       └── ci.yml               # Locked, secret-free pull-request validation
 ├── .pre-commit-config.yaml      # Ruff and repository-hygiene commit hooks
 ├── .python-version              # Canonical Python 3.14 interpreter line
 ├── .env.example                 # Provider-key placeholders only
@@ -330,6 +334,8 @@ Deterministic tests construct `NumpyVectorIndex` in memory. CLI `ingest` persist
 ## Development
 
 Ruff is the repository's formatter and linter. Mypy strictly checks the application modules and RagaliQ adapter. Pytest-cov measures branch coverage over the same application/adapter scope. The free baseline is 70.02%, enforced as a clean integer `fail_under = 70`; paid provider paths remain excluded. Pre-commit runs the static tools and repository-hygiene hooks before commits. Every hook uses `uv run --no-sync` and the hash-locked `.venv`; hook execution does not create separate environments or resolve additional packages. The sandbox still has no build backend, package-publication layer, or task runner. uv owns environment creation and exact dependency synchronization.
+
+GitHub Actions validates every ready pull request against its prospective merge result and validates `main` after each merge. CI installs the hash-locked Python 3.14 environment from a clean checkout, validates the pre-commit configuration, runs every repository hook, and runs the deterministic branch-coverage gate with OpenAI and RagaliQ paid markers explicitly excluded. Provider key variables are explicitly empty throughout the job, and the workflow does not reference provider secrets.
 
 Install the Git hook once per clone:
 
@@ -447,7 +453,7 @@ The next rungs are intentionally visible but not implemented:
 6. Move the synchronous local boundary into an observable backend with retry, rate-limit, cache, cost, and failure policies.
 7. Expand RagaliQ semantic evaluation over versioned production fixtures without transferring exact compliance assertions to probabilistic judges.
 
-VerdigrisE remains a sandbox: it does not claim PDF support, table extraction, production storage, web serving, CI integration, generated reports, or deployment readiness.
+VerdigrisE remains a sandbox: it does not claim PDF support, table extraction, production storage, web serving, generated reports, or deployment readiness.
 
 ---
 
