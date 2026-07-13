@@ -183,12 +183,19 @@ class NumpyVectorIndex:
     """
 
     def __init__(self, *, dimension: int, embedding_model: str) -> None:
-        if dimension <= 0:
-            raise ValueError("dimension must be positive")
+        dimension, embedding_model = self._validate_identity(dimension, embedding_model)
         self.dimension = dimension
         self.embedding_model = embedding_model
         self._vectors: _Float32Array = np.empty((0, dimension), dtype=np.float32)
         self._entries: list[_IndexEntry] = []
+
+    @staticmethod
+    def _validate_identity(dimension: object, embedding_model: object) -> tuple[int, str]:
+        if isinstance(dimension, bool) or not isinstance(dimension, int) or dimension <= 0:
+            raise ValueError("Index dimension must be a positive integer")
+        if not isinstance(embedding_model, str) or not embedding_model.strip():
+            raise ValueError("Index embedding model must be a non-empty string")
+        return dimension, embedding_model
 
     @staticmethod
     def _make_index_entries(entries: Sequence[CorpusEntry]) -> list[_IndexEntry]:
@@ -366,20 +373,27 @@ class NumpyVectorIndex:
                 f"No complete index at {directory}. Run: python pipeline.py ingest"
             )
 
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        if manifest.get("schema_version") != INDEX_SCHEMA_VERSION:
+        raw_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if not isinstance(raw_manifest, dict):
+            raise ValueError("Index manifest must be a JSON object")
+        manifest = cast(dict[str, object], raw_manifest)
+        schema_version = manifest.get("schema_version")
+        if (
+            isinstance(schema_version, bool)
+            or not isinstance(schema_version, int)
+            or schema_version != INDEX_SCHEMA_VERSION
+        ):
             raise ValueError("Unsupported index schema version")
         if manifest.get("distance_definition") != DISTANCE_DEFINITION:
             raise ValueError("Persisted index uses a different distance definition")
         if manifest.get("tie_break_rule") != TIE_BREAK_RULE:
             raise ValueError("Persisted index uses a different tie-breaking rule")
-        dimension = manifest.get("dimension")
-        embedding_model = manifest.get("embedding_model")
+        dimension, embedding_model = cls._validate_identity(
+            manifest.get("dimension"), manifest.get("embedding_model")
+        )
         corpus_digest = manifest.get("corpus_sha256")
         vector_digest = manifest.get("vectors_sha256")
         entries = cls._validate_index_entries(manifest.get("entries"))
-        if not isinstance(dimension, int) or not isinstance(embedding_model, str):
-            raise ValueError("Index manifest has invalid model or dimension fields")
         if corpus_digest != cls._entries_sha256(entries):
             raise ValueError("Index manifest corpus fingerprint does not match its entries")
         if not isinstance(vector_digest, str) or vector_digest != cls._file_sha256(vector_path):
@@ -525,12 +539,12 @@ def _real_client() -> OpenAI:
 
 
 def _real_pipeline(*, index_directory: Path = INDEX_DIRECTORY, debug: bool = False) -> RagPipeline:
-    client = _real_client()
-    embedder = OpenAIEmbeddingProvider(client)
     index = NumpyVectorIndex.load(index_directory)
     expected_corpus_digest = NumpyVectorIndex.corpus_sha256(CORPUS)
     if index.indexed_corpus_sha256 != expected_corpus_digest:
         raise ValueError("Persisted index is stale relative to corpus.py; run ingest again")
+    client = _real_client()
+    embedder = OpenAIEmbeddingProvider(client)
     return RagPipeline(
         index=index,
         embedder=embedder,
