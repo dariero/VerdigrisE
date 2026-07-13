@@ -1,0 +1,43 @@
+name: PR safeguards
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-safeguards-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  free-validation:
+    name: Free deterministic validation
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out the current PR head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: "0.11.28"
+          python-version: "3.14"
+          enable-cache: false
+
+      - name: Install the locked environment
+        run: |
+          uv venv --python 3.14
+          uv pip sync --preview-features pylock --require-hashes pylock.toml
+          uv pip check
+
+      - name: Run the free deterministic suite
+        run: .venv/bin/python -m pytest -c pytest.ini eval/ -q
