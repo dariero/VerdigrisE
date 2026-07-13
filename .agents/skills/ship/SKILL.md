@@ -13,7 +13,8 @@ description: "Publish a completed VerdigrisE change by validating the atomic dif
 
    ```bash
    .venv/bin/pre-commit run --all-files
-   .venv/bin/python -m pytest -c pytest.ini eval/ -q
+   .venv/bin/python -m pytest eval/ -q
+   .venv/bin/python -m pytest --cov --cov-report=term-missing eval/ -q
    ```
 
    If pre-commit modifies files, inspect the changes, restage the explicit intended paths, and rerun the command until every hook passes.

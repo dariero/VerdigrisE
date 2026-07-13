@@ -39,5 +39,5 @@ jobs:
           uv pip sync --preview-features pylock --require-hashes pylock.toml
           uv pip check
 
-      - name: Run the free deterministic suite
-        run: .venv/bin/python -m pytest -c pytest.ini eval/ -q
+      - name: Run the free deterministic coverage gate
+        run: .venv/bin/python -m pytest --cov --cov-report=term-missing eval/ -q

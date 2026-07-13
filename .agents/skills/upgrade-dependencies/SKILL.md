@@ -37,10 +37,11 @@ description: "Update VerdigrisE dependencies while preserving its Python 3.14, h
    uv pip check
    ```
 
-9. Run the free deterministic suite:
+9. Run the free deterministic suite and branch-coverage gate:
 
    ```bash
-   .venv/bin/python -m pytest -c pytest.ini eval/ -q
+   .venv/bin/python -m pytest eval/ -q
+   .venv/bin/python -m pytest --cov --cov-report=term-missing eval/ -q
    ```
 
 10. Inspect the full `pyproject.toml` and `pylock.toml` diff. Reject unrelated direct changes and unexplained transitive churn; do not use an all-package refresh to broaden the approved scope. Explain necessary transitive changes, compatibility implications, and documentation updates. Do not run paid provider tests without separate per-run approval.

@@ -25,11 +25,38 @@ dev = [
 ]
 test = [
     "pytest>=9.1.1,<10",
+    "pytest-cov>=7.1.0,<8",
     "ragaliq==0.2.0",
 ]
 
 [tool.uv]
 package = false
+
+[tool.pytest]
+minversion = "9.1"
+testpaths = ["eval"]
+addopts = ["-m", "not openai and not rag_test"]
+strict_config = true
+strict_markers = true
+markers = [
+    "openai: makes paid OpenAI pipeline calls and must be selected explicitly",
+    "rag_test: makes paid Claude judge calls through RagaliQ's native pytest boundary",
+]
+
+[tool.coverage.run]
+branch = true
+source = [
+    "config",
+    "corpus",
+    "models",
+    "pipeline",
+    "eval.ragaliq_adapter",
+]
+
+[tool.coverage.report]
+fail_under = 70
+precision = 2
+show_missing = true
 
 [tool.ruff]
 target-version = "py314"

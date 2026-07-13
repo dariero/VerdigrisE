@@ -16,14 +16,15 @@ VerdigrisE is a public, local-first sandbox for inspectable RAG mechanics. Keep 
 - Use uv for environment management. `pyproject.toml` is the abstract dependency authority; the hash-bearing `pylock.toml` is the exact public-install contract. Change them together.
 - Public clones must install the published `ragaliq` artifact. Never commit an editable sibling checkout, local path, machine-specific URL, or private package source.
 - Do not add or remove direct dependencies, change constraints, broaden the Python range, or introduce development tooling without explicit approval. Use `.agents/skills/upgrade-dependencies/SKILL.md` for approved dependency work.
-- Ruff is the configured formatter and linter. Mypy strictly checks the application modules and RagaliQ adapter. Pre-commit runs both tools and repository-hygiene hooks. This repository has no coverage tooling, build backend, or task runner; use only the commands documented in `README.md`.
+- Ruff is the configured formatter and linter. Mypy strictly checks the application modules and RagaliQ adapter. Pytest-cov enforces the measured branch-coverage floor over that application/adapter scope. Pre-commit runs the static tools and repository-hygiene hooks. This repository has no build backend or task runner; use only the commands documented in `README.md`.
 
 ## Testing and paid-call safety
 
-After code, fixture, dependency, or test changes, run the free deterministic suite:
+After code, fixture, dependency, or test changes, run the free deterministic suite and branch-coverage gate:
 
 ```bash
-.venv/bin/python -m pytest -c pytest.ini eval/ -q
+.venv/bin/python -m pytest eval/ -q
+.venv/bin/python -m pytest --cov --cov-report=term-missing eval/ -q
 ```
 
 For documentation-only changes, verify every documented command and source reference against the repository. The default pytest marker policy must continue to exclude `openai` and `rag_test`; any CI must use that free boundary and must not expose provider keys or select paid markers.
@@ -46,7 +47,7 @@ Any command that can contact OpenAI or Anthropic requires explicit approval for 
 - `pipeline.py` and `models.py`: runtime and public capture contracts
 - `eval/test_verdigrise.py`: deterministic and paid ownership boundaries
 - `eval/ragaliq_adapter.py`: RagaliQ integration boundary
-- `pyproject.toml`, `pylock.toml`, and `pytest.ini`: dependency, interpreter, and marker policy
+- `pyproject.toml` and `pylock.toml`: dependency, interpreter, pytest, marker, and coverage policy
 
 ## Review guidelines
 
