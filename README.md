@@ -46,7 +46,7 @@ uv pip sync --preview-features pylock --require-hashes pylock.toml
 uv pip check
 ```
 
-`pyproject.toml` is the abstract dependency authority: NumPy, OpenAI, and Pydantic are runtime dependencies; pytest and RagaliQ are test/evaluation dependencies. The universal, hash-bearing `pylock.toml` records the exact cross-platform environment. It was generated with uv 0.11.28 for Python 3.14, and installs the public `ragaliq==0.2.0` release rather than relying on an adjacent checkout.
+`pyproject.toml` is the abstract dependency authority: NumPy, OpenAI, and Pydantic are runtime dependencies; pytest and RagaliQ are test/evaluation dependencies; Ruff is development tooling. The universal, hash-bearing `pylock.toml` records the exact cross-platform environment. It was generated with uv 0.11.28 for Python 3.14, and installs the public `ragaliq==0.2.0` release rather than relying on an adjacent checkout.
 
 An editable `../RagaliQ` install is an optional maintainer-only co-development override, not the public installation contract. Re-running the locked sync command restores the published RagaliQ artifact.
 
@@ -328,7 +328,23 @@ Deterministic tests construct `NumpyVectorIndex` in memory. CLI `ingest` persist
 
 ## Development
 
-No formatter, linter, type-checker, build backend, package-publication layer, or task runner is introduced by this sandbox. uv owns environment creation and exact dependency synchronization; the supported local validation command is the free pytest tier:
+Ruff is the repository's formatter and linter. The sandbox still has no type checker, coverage tooling, build backend, package-publication layer, task runner, pre-commit hooks, or CI integration. uv owns environment creation and exact dependency synchronization.
+
+Check formatting and linting without changing files:
+
+```bash
+.venv/bin/ruff format --check .
+.venv/bin/ruff check .
+```
+
+Apply Ruff's safe lint fixes, then format the tree:
+
+```bash
+.venv/bin/ruff check --fix .
+.venv/bin/ruff format .
+```
+
+Run the free deterministic suite:
 
 ```bash
 .venv/bin/python -m pytest -c pytest.ini eval/ -q

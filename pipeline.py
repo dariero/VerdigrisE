@@ -16,8 +16,9 @@ import argparse
 import hashlib
 import json
 import os
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Protocol, Sequence
+from typing import Any, Protocol
 
 import numpy as np
 from openai import OpenAI
@@ -221,9 +222,7 @@ class NumpyVectorIndex:
             folio = metadata.get("folio")
             if grimoire_id is not None and not isinstance(grimoire_id, str):
                 raise ValueError(f"Indexed grimoire_id is invalid for {chunk_id}")
-            if folio is not None and (
-                isinstance(folio, bool) or not isinstance(folio, (int, str))
-            ):
+            if folio is not None and (isinstance(folio, bool) or not isinstance(folio, (int, str))):
                 raise ValueError(f"Indexed folio is invalid for {chunk_id}")
             if grimoire_id is None and folio is None:
                 raise ValueError(f"Indexed entry has no citation metadata: {chunk_id}")
@@ -291,9 +290,7 @@ class NumpyVectorIndex:
         if top_k <= 0:
             raise ValueError("top_k must be positive")
         if query_vector.shape != (self.dimension,):
-            raise ValueError(
-                f"Expected query shape {(self.dimension,)}, got {query_vector.shape}"
-            )
+            raise ValueError(f"Expected query shape {(self.dimension,)}, got {query_vector.shape}")
 
         normalized_query = self._normalize(query_vector[None, :].astype(np.float32))[0]
         similarities = self._vectors @ normalized_query
@@ -350,7 +347,7 @@ class NumpyVectorIndex:
             temporary_manifest_path.unlink(missing_ok=True)
 
     @classmethod
-    def load(cls, directory: Path) -> "NumpyVectorIndex":
+    def load(cls, directory: Path) -> NumpyVectorIndex:
         """Load a previously ingested index and validate row alignment."""
 
         manifest_path = directory / INDEX_MANIFEST_FILENAME
@@ -404,9 +401,7 @@ def build_context_payload(chunks: Sequence[RetrievedChunk]) -> str:
     for chunk in chunks:
         grimoire_id = chunk.metadata.get("grimoire_id")
         folio = chunk.metadata.get("folio")
-        label = (
-            f"[CONTEXT id={chunk.id} grimoire_id={grimoire_id!r} folio={folio!r}]"
-        )
+        label = f"[CONTEXT id={chunk.id} grimoire_id={grimoire_id!r} folio={folio!r}]"
         blocks.append(f"{label}\n{chunk.text}\n[END CONTEXT id={chunk.id}]")
     return "\n\n".join(blocks)
 

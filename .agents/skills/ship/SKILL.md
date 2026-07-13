@@ -8,9 +8,11 @@ description: "Publish a completed VerdigrisE change by validating the atomic dif
 1. Read `AGENTS.md`, then inspect `git status --short --branch`, the unstaged diff, the staged diff, the branch diff against `origin/main`, and recent repository history.
 2. Confirm the intended change is atomic and that unrelated user work will remain untouched. Stop if the shipping scope is ambiguous.
 3. Fetch `origin/main`. Verify that the current branch is a `codex/<short-slug>` task branch whose pull-request base is `main`; never commit on `main`. If the branch predates current `origin/main`, assess whether it must be reconciled before shipping and preserve shared history and user work.
-4. Run the free validation command:
+4. Run the free validation commands:
 
    ```bash
+   .venv/bin/ruff format --check .
+   .venv/bin/ruff check .
    .venv/bin/python -m pytest -c pytest.ini eval/ -q
    ```
 
