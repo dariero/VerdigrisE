@@ -1,7 +1,7 @@
 # Changes to protected policy and contract surfaces require maintainer review.
 /.github/ @dariero
 /AGENTS.md @dariero
-/.agents/skills/ship/SKILL.md @dariero
+/.agents/skills/ @dariero
 /LICENSE @dariero
 /SECURITY.md @dariero
 /.env.example @dariero
