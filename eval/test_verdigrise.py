@@ -20,6 +20,7 @@ import pytest
 from openai import OpenAI
 from pydantic import BaseModel, ConfigDict
 from ragaliq import RAGTestResult
+from ragaliq.judges import DEFAULT_JUDGE_MODEL
 
 import pipeline as pipeline_module
 from config import (
@@ -793,17 +794,20 @@ def test_zero_vector_is_rejected() -> None:
 
 
 class _FakeEmbeddingsEndpoint:
-    def __init__(self) -> None:
+    def __init__(self, data: list[SimpleNamespace] | None = None) -> None:
         self.kwargs: dict[str, object] = {}
-
-    def create(self, **kwargs: object) -> SimpleNamespace:
-        self.kwargs = kwargs
-        return SimpleNamespace(
-            data=[
+        self._data = (
+            data
+            if data is not None
+            else [
                 SimpleNamespace(index=1, embedding=[0.0, 1.0, 0.0]),
                 SimpleNamespace(index=0, embedding=[1.0, 0.0, 0.0]),
             ]
         )
+
+    def create(self, **kwargs: object) -> SimpleNamespace:
+        self.kwargs = kwargs
+        return SimpleNamespace(data=self._data)
 
 
 def test_real_embedding_adapter_batches_and_debugs_safely(capsys: Any) -> None:
@@ -820,6 +824,7 @@ def test_real_embedding_adapter_batches_and_debugs_safely(capsys: Any) -> None:
         "input": ["first", "second"],
         "encoding_format": "float",
     }
+    assert matrix.dtype == np.float32
     assert matrix.shape == (2, 3)
     assert matrix.tolist() == [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
     output = capsys.readouterr().out
@@ -832,11 +837,99 @@ def test_real_embedding_adapter_batches_and_debugs_safely(capsys: Any) -> None:
     assert "first" not in output
 
 
+@pytest.mark.parametrize(
+    ("inputs", "input_ids"),
+    [
+        pytest.param([], [], id="empty"),
+        pytest.param(["first"], [], id="missing-id"),
+        pytest.param(["first"], ["id-1", "id-2"], id="extra-id"),
+    ],
+)
+def test_embedding_adapter_rejects_empty_or_misaligned_requests(
+    inputs: list[str], input_ids: list[str]
+) -> None:
+    endpoint = _FakeEmbeddingsEndpoint()
+    with pytest.raises(ValueError, match="non-empty and rank-aligned"):
+        OpenAIEmbeddingProvider(SimpleNamespace(embeddings=endpoint)).embed(
+            inputs,
+            input_ids=input_ids,
+            stage="corpus",
+        )
+    assert endpoint.kwargs == {}
+
+
+@pytest.mark.parametrize(
+    ("data", "message"),
+    [
+        pytest.param([], "indices are not contiguous", id="missing-all-indices"),
+        pytest.param(
+            [
+                SimpleNamespace(index=0, embedding=[1.0]),
+                SimpleNamespace(index=0, embedding=[0.0]),
+            ],
+            "indices are not contiguous",
+            id="duplicate-index",
+        ),
+        pytest.param(
+            [
+                SimpleNamespace(index=0, embedding=[1.0]),
+                SimpleNamespace(index=2, embedding=[0.0]),
+            ],
+            "indices are not contiguous",
+            id="gapped-index",
+        ),
+        pytest.param(
+            [
+                SimpleNamespace(index=0, embedding=1.0),
+                SimpleNamespace(index=1, embedding=0.0),
+            ],
+            "Unexpected embedding matrix shape",
+            id="not-a-matrix",
+        ),
+        pytest.param(
+            [
+                SimpleNamespace(index=0, embedding=[]),
+                SimpleNamespace(index=1, embedding=[]),
+            ],
+            "Unexpected embedding matrix shape",
+            id="zero-dimension",
+        ),
+        pytest.param(
+            [
+                SimpleNamespace(index=0, embedding=[float("nan")]),
+                SimpleNamespace(index=1, embedding=[1.0]),
+            ],
+            "non-finite value",
+            id="non-finite",
+        ),
+    ],
+)
+def test_embedding_adapter_rejects_malformed_provider_responses(
+    data: list[SimpleNamespace], message: str
+) -> None:
+    endpoint = _FakeEmbeddingsEndpoint(data)
+    with pytest.raises(ValueError, match=message):
+        OpenAIEmbeddingProvider(SimpleNamespace(embeddings=endpoint)).embed(
+            ["first", "second"],
+            input_ids=["id-1", "id-2"],
+            stage="corpus",
+        )
+
+
 class _FakeCompletionsEndpoint:
-    def __init__(self, content: str | None, finish_reason: str = "stop") -> None:
+    def __init__(
+        self,
+        content: str | None,
+        finish_reason: str = "stop",
+        *,
+        refusal: str | None = None,
+        choice_count: int = 1,
+    ) -> None:
         self.kwargs: dict[str, object] = {}
         self._content = content
         self._finish_reason = finish_reason
+        self._refusal = refusal
+        self._choice_count = choice_count
 
     def create(self, **kwargs: object) -> SimpleNamespace:
         self.kwargs = kwargs
@@ -844,8 +937,9 @@ class _FakeCompletionsEndpoint:
             choices=[
                 SimpleNamespace(
                     finish_reason=self._finish_reason,
-                    message=SimpleNamespace(content=self._content, refusal=None),
+                    message=SimpleNamespace(content=self._content, refusal=self._refusal),
                 )
+                for _ in range(self._choice_count)
             ]
         )
 
@@ -855,7 +949,7 @@ def _fake_generation_client(endpoint: _FakeCompletionsEndpoint) -> SimpleNamespa
 
 
 def test_real_generation_adapter_preserves_structured_text_and_citations() -> None:
-    raw = '{"answer":"3 drams","sources":["verdigris-dose-verdant"]}'
+    raw = '\n{"answer":"3 drams","sources":["verdigris-dose-verdant"]}\n'
     endpoint = _FakeCompletionsEndpoint(raw)
     generator = OpenAIAnswerGenerator(_fake_generation_client(endpoint))
     messages = [
@@ -863,18 +957,80 @@ def test_real_generation_adapter_preserves_structured_text_and_citations() -> No
         PromptMessage(role="user", content="user"),
     ]
     assert generator.generate("question", messages) == raw
-    assert endpoint.kwargs["model"] == GENERATION_MODEL
-    assert endpoint.kwargs["temperature"] == GENERATION_TEMPERATURE
-    assert endpoint.kwargs["messages"] == [
-        {"role": "system", "content": "system"},
-        {"role": "user", "content": "user"},
-    ]
+    assert endpoint.kwargs == {
+        "model": GENERATION_MODEL,
+        "temperature": GENERATION_TEMPERATURE,
+        "max_completion_tokens": 300,
+        "messages": [
+            {"role": "system", "content": "system"},
+            {"role": "user", "content": "user"},
+        ],
+    }
 
 
-def test_generation_parser_rejects_missing_text_instead_of_discarding_it() -> None:
-    response = _FakeCompletionsEndpoint(None).create()
-    with pytest.raises(GenerationResponseError, match="no text content"):
+@pytest.mark.parametrize(
+    ("content", "finish_reason", "refusal", "choice_count", "message"),
+    [
+        pytest.param("answer", "stop", None, 0, "Expected one generation choice, got 0", id="none"),
+        pytest.param("answer", "stop", None, 2, "Expected one generation choice, got 2", id="many"),
+        pytest.param("partial", "length", None, 1, "did not finish normally", id="truncated"),
+        pytest.param(None, "stop", None, 1, "no text content", id="missing-text"),
+        pytest.param(None, "stop", "policy refusal", 1, "Refusal: policy refusal", id="refusal"),
+        pytest.param("", "stop", None, 1, "empty text content", id="empty"),
+        pytest.param(" \n", "stop", None, 1, "empty text content", id="whitespace"),
+    ],
+)
+def test_generation_parser_rejects_incomplete_provider_responses(
+    content: str | None,
+    finish_reason: str,
+    refusal: str | None,
+    choice_count: int,
+    message: str,
+) -> None:
+    response = _FakeCompletionsEndpoint(
+        content,
+        finish_reason,
+        refusal=refusal,
+        choice_count=choice_count,
+    ).create()
+    with pytest.raises(GenerationResponseError, match=message):
         parse_generation_response(response)
+
+
+@pytest.mark.parametrize("case", ANSWERABLE, ids=lambda case: case.case_id)
+def test_rag_record_maps_exactly_to_ragaliq_case(
+    case: GoldenCase, records: dict[str, RagRecord]
+) -> None:
+    record = records[case.case_id]
+    test_case = to_ragaliq_case(record, case_id=case.case_id)
+    assert test_case.model_dump() == {
+        "id": case.case_id,
+        "name": f"VerdigrisE semantic residue for {case.case_id}",
+        "query": record.question,
+        "context": [record.context_payload],
+        "response": record.answer,
+        "expected_answer": None,
+        "expected_facts": None,
+        "tags": ["verdigrise", "semantic-residue"],
+    }
+
+
+def test_ragaliq_case_applies_published_whitespace_normalization(
+    records: dict[str, RagRecord],
+) -> None:
+    case = GOLDEN_BY_ID["numeric-source-verdigris-dose"]
+    record = records[case.case_id]
+    spaced_record = record.model_copy(
+        update={
+            "question": f" \n{record.question}\n ",
+            "context_payload": f" \n{record.context_payload}\n ",
+            "answer": f" \n{record.answer}\n ",
+        }
+    )
+    test_case = to_ragaliq_case(spaced_record, case_id=case.case_id)
+    assert test_case.query == record.question
+    assert test_case.context == [record.context_payload]
+    assert test_case.response == record.answer
 
 
 def test_ragaliq_canned_runner_executes_structural_wiring_locally(
@@ -884,13 +1040,46 @@ def test_ragaliq_canned_runner_executes_structural_wiring_locally(
     record = records[case.case_id]
     transport = CannedJudgeTransport()
     runner = build_ragaliq_runner(transport)
+    assert runner.evaluator_names == ["faithfulness", "relevance"]
+    assert runner.default_threshold == 0.7
     test_case = to_ragaliq_case(record, case_id=case.case_id)
     result = runner.evaluate(test_case)
     assert isinstance(result, RAGTestResult)
     assert result.passed
     assert result.scores == {"faithfulness": 1.0, "relevance": 0.9}
-    assert result.test_case.context == [record.context_payload]
+    assert result.test_case == test_case
+    assert result.judge_tokens_used == 90
     assert len(transport.calls) == 3
+    for call in transport.calls:
+        assert set(call) == {
+            "system_prompt",
+            "user_prompt",
+            "model",
+            "temperature",
+            "max_tokens",
+        }
+        assert call["model"] == DEFAULT_JUDGE_MODEL
+        assert call["temperature"] == 0.0
+        assert call["max_tokens"] == 1024
+
+    user_prompts: list[str] = []
+    for call in transport.calls:
+        user_prompt = call["user_prompt"]
+        assert isinstance(user_prompt, str)
+        user_prompts.append(user_prompt)
+    routing = sorted(
+        (
+            record.question in prompt,
+            record.answer in prompt,
+            record.context_payload in prompt,
+        )
+        for prompt in user_prompts
+    )
+    assert routing == [
+        (False, False, True),
+        (False, True, False),
+        (True, True, False),
+    ]
 
 
 requires_openai = pytest.mark.skipif(

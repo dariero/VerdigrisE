@@ -24,7 +24,7 @@ class CannedJudgeTransport:
     """Deterministic transport that executes RagaliQ parsing and evaluators locally."""
 
     def __init__(self) -> None:
-        self.calls: list[dict[str, str]] = []
+        self.calls: list[dict[str, object]] = []
 
     async def send(
         self,
@@ -34,9 +34,14 @@ class CannedJudgeTransport:
         temperature: float = 0.0,
         max_tokens: int = 1024,
     ) -> TransportResponse:
-        del temperature, max_tokens
         self.calls.append(
-            {"system_prompt": system_prompt, "user_prompt": user_prompt, "model": model}
+            {
+                "system_prompt": system_prompt,
+                "user_prompt": user_prompt,
+                "model": model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
         )
         combined = (system_prompt + user_prompt).lower()
         if "extract" in combined and "claim" in combined:
@@ -76,7 +81,7 @@ def build_ragaliq_runner(transport: JudgeTransport) -> RagaliQ:
 
 
 def to_ragaliq_case(record: RagRecord, *, case_id: str) -> RAGTestCase:
-    """Pass exactly what generation saw to RagaliQ, without reloading by id."""
+    """Map captured semantic fields into RagaliQ without reloading by id."""
 
     return RAGTestCase(
         id=case_id,
