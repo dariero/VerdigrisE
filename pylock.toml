@@ -281,6 +281,13 @@ sdist = { url = "https://files.pythonhosted.org/packages/8e/22/2de9408ac81acbb8a
 wheels = [{ url = "https://files.pythonhosted.org/packages/80/6e/4b28b62ecb6aae56769c34a8ff1d661473ec1e9519e2d5f8b2c150086b26/pre_commit-4.6.0-py2.py3-none-any.whl", upload-time = 2026-04-21T20:31:40Z, size = 226472, hashes = { sha256 = "e2cf246f7299edcabcf15f9b0571fdce06058527f0a06535068a86d38089f29b" } }]
 
 [[packages]]
+name = "pre-commit-hooks"
+version = "6.0.0"
+index = "https://pypi.org/simple"
+sdist = { url = "https://files.pythonhosted.org/packages/36/4d/93e63e48f8fd16d6c1e4cef5dabadcade4d1325c7fd6f29f075a4d2284f3/pre_commit_hooks-6.0.0.tar.gz", upload-time = 2025-08-09T19:25:04Z, size = 28293, hashes = { sha256 = "76d8370c006f5026cdd638a397a678d26dda735a3c88137e05885a020f824034" } }
+wheels = [{ url = "https://files.pythonhosted.org/packages/12/46/eba9be9daa403fa94854ce16a458c29df9a01c6c047931c3d8be6016cd9a/pre_commit_hooks-6.0.0-py2.py3-none-any.whl", upload-time = 2025-08-09T19:25:03Z, size = 41338, hashes = { sha256 = "76161b76d321d2f8ee2a8e0b84c30ee8443e01376121fd1c90851e33e3bd7ee2" } }]
+
+[[packages]]
 name = "pydantic"
 version = "2.13.4"
 index = "https://pypi.org/simple"
@@ -385,6 +392,13 @@ version = "15.0.0"
 index = "https://pypi.org/simple"
 sdist = { url = "https://files.pythonhosted.org/packages/c0/8f/0722ca900cc807c13a6a0c696dacf35430f72e0ec571c4275d2371fca3e9/rich-15.0.0.tar.gz", upload-time = 2026-04-12T08:24:00Z, size = 230680, hashes = { sha256 = "edd07a4824c6b40189fb7ac9bc4c52536e9780fbbfbddf6f1e2502c31b068c36" } }
 wheels = [{ url = "https://files.pythonhosted.org/packages/82/3b/64d4899d73f91ba49a8c18a8ff3f0ea8f1c1d75481760df8c68ef5235bf5/rich-15.0.0-py3-none-any.whl", upload-time = 2026-04-12T08:24:02Z, size = 310654, hashes = { sha256 = "33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb" } }]
+
+[[packages]]
+name = "ruamel-yaml"
+version = "0.19.1"
+index = "https://pypi.org/simple"
+sdist = { url = "https://files.pythonhosted.org/packages/c7/3b/ebda527b56beb90cb7652cb1c7e4f91f48649fbcd8d2eb2fb6e77cd3329b/ruamel_yaml-0.19.1.tar.gz", upload-time = 2026-01-02T16:50:31Z, size = 142709, hashes = { sha256 = "53eb66cd27849eff968ebf8f0bf61f46cdac2da1d1f3576dd4ccee9b25c31993" } }
+wheels = [{ url = "https://files.pythonhosted.org/packages/b8/0c/51f6841f1d84f404f92463fc2b1ba0da357ca1e3db6b7fbda26956c3b82a/ruamel_yaml-0.19.1-py3-none-any.whl", upload-time = 2026-01-02T16:50:29Z, size = 118102, hashes = { sha256 = "27592957fedf6e0b62f281e96effd28043345e0e66001f97683aa9a40c667c93" } }]
 
 [[packages]]
 name = "ruff"
