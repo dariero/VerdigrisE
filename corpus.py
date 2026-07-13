@@ -281,9 +281,7 @@ GOLDEN_CASES: list[GoldenCaseFixture] = [
     },
     {
         "case_id": "conditional-shadeglass-harvest",
-        "question": (
-            "Under GRIM-UMBRAL-BOTANY, when may a shadeglass orchid be harvested?"
-        ),
+        "question": ("Under GRIM-UMBRAL-BOTANY, when may a shadeglass orchid be harvested?"),
         "expected_retrieved_id": "shadeglass-orchid-harvest",
         "expected_ranked_ids": ["shadeglass-orchid-harvest", "sunspire-orchid-harvest"],
         "collision_sibling_ids": ["sunspire-orchid-harvest"],
@@ -354,9 +352,7 @@ def validate_corpus(entries: list[CorpusEntry] = CORPUS) -> None:
         if entry["grimoire_id"] is not None and not isinstance(entry["grimoire_id"], str):
             raise ValueError(f"Corpus grimoire_id must be a str or None for {entry['id']}")
         folio = entry["folio"]
-        if folio is not None and (
-            isinstance(folio, bool) or not isinstance(folio, (int, str))
-        ):
+        if folio is not None and (isinstance(folio, bool) or not isinstance(folio, (int, str))):
             raise ValueError(f"Corpus folio must be an int, str, or None for {entry['id']}")
         for key in ("subject", "fact_type", "condition"):
             if not isinstance(entry[key], str) or not entry[key]:

@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-
 EMBEDDING_MODEL = "text-embedding-3-small"
 GENERATION_MODEL = "gpt-5.6-luna"
 GENERATION_TEMPERATURE = 0.0

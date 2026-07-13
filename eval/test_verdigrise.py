@@ -84,24 +84,12 @@ _CORPUS_VECTORS: dict[str, list[float]] = {
     "asterquartz-powdering": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0],
 }
 _QUESTION_VECTORS: dict[str, list[float]] = {
-    GOLDEN_BY_ID["numeric-source-verdigris-dose"].question: [
-        4, 4, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
-    ],
-    GOLDEN_BY_ID["numeric-source-amber-dose"].question: [
-        4, 0, 4, 1, 0, 0, 0, 0, 0, 0, 0, 0
-    ],
-    GOLDEN_BY_ID["numeric-source-obsidian-dose"].question: [
-        4, 1, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0
-    ],
-    GOLDEN_BY_ID["near-synonym-moonpetal-vapor"].question: [
-        0, 0, 0, 0, 4, 4, 1, 0, 0, 0, 0, 0
-    ],
-    GOLDEN_BY_ID["conditional-shadeglass-harvest"].question: [
-        0, 0, 0, 0, 0, 0, 0, 4, 4, 1, 0, 0
-    ],
-    GOLDEN_BY_ID["absent-moonpetal-dew-shelf-life"].question: [
-        0, 0, 0, 0, 4, 1, 0, 0, 0, 0, 0, 4
-    ],
+    GOLDEN_BY_ID["numeric-source-verdigris-dose"].question: [4, 4, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    GOLDEN_BY_ID["numeric-source-amber-dose"].question: [4, 0, 4, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+    GOLDEN_BY_ID["numeric-source-obsidian-dose"].question: [4, 1, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0],
+    GOLDEN_BY_ID["near-synonym-moonpetal-vapor"].question: [0, 0, 0, 0, 4, 4, 1, 0, 0, 0, 0, 0],
+    GOLDEN_BY_ID["conditional-shadeglass-harvest"].question: [0, 0, 0, 0, 0, 0, 0, 4, 4, 1, 0, 0],
+    GOLDEN_BY_ID["absent-moonpetal-dew-shelf-life"].question: [0, 0, 0, 0, 4, 1, 0, 0, 0, 0, 0, 4],
 }
 
 
@@ -403,9 +391,7 @@ def test_index_persistence_preserves_rank_and_grimoire_metadata(tmp_path: Path) 
     assert [hit.id for hit in hits] == case.expected_ranked_ids
     assert hits[0].metadata["grimoire_id"] == "GRIM-VERDANT"
     assert hits[0].metadata["folio"] == 21
-    assert hits[0].metadata["condition"] == (
-        "distilled in copper and administered after dusk"
-    )
+    assert hits[0].metadata["condition"] == ("distilled in copper and administered after dusk")
 
 
 def test_zero_vector_is_rejected() -> None:

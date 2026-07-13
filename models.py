@@ -40,7 +40,7 @@ class RagRecord(BaseModel):
     answer: str
 
     @model_validator(mode="after")
-    def rank_aligned_fields_must_match(self) -> "RagRecord":
+    def rank_aligned_fields_must_match(self) -> RagRecord:
         chunk_ids = [chunk.id for chunk in self.retrieved_chunks]
         chunk_distances = [chunk.distance for chunk in self.retrieved_chunks]
         if self.retrieved_ids != chunk_ids:

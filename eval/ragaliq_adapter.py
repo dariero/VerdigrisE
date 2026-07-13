@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-from ragaliq import RAGTestCase, RagaliQ
+from ragaliq import RagaliQ, RAGTestCase
 from ragaliq.judges import (
     DEFAULT_JUDGE_MODEL,
     BaseJudge,
