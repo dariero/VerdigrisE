@@ -173,6 +173,11 @@ GOLDEN_CASES: list[GoldenCaseFixture] = [
             "distilled in amber glass",
             "administered at dawn",
             "[verdigris-dose-amber]",
+            "15 drams",
+            "GRIM-OBSIDIAN-PETAL",
+            "distilled in basalt",
+            "lunar eclipse",
+            "[verdigris-dose-obsidian]",
         ],
         "expected_answer": (
             "GRIM-VERDANT prescribes 3 drams of verdigris blossom elixir for "
@@ -208,6 +213,11 @@ GOLDEN_CASES: list[GoldenCaseFixture] = [
             "distilled in basalt",
             "lunar eclipse",
             "[verdigris-dose-obsidian]",
+            "3 drams",
+            "GRIM-VERDANT",
+            "distilled in copper",
+            "administered after dusk",
+            "[verdigris-dose-verdant]",
         ],
         "expected_answer": (
             "GRIM-AMBER prescribes 9 drams of verdigris blossom elixir for tarnish "
@@ -243,6 +253,11 @@ GOLDEN_CASES: list[GoldenCaseFixture] = [
             "distilled in copper",
             "administered after dusk",
             "[verdigris-dose-verdant]",
+            "9 drams",
+            "GRIM-AMBER",
+            "distilled in amber glass",
+            "administered at dawn",
+            "[verdigris-dose-amber]",
         ],
         "expected_answer": (
             "GRIM-OBSIDIAN-PETAL prescribes 15 drams of verdigris blossom elixir "
@@ -297,7 +312,7 @@ GOLDEN_CASES: list[GoldenCaseFixture] = [
         ],
         "forbidden": [
             "10 moon-phases",
-            "grown in full sun",
+            "full sun",
             "GRIM-SOLAR-FLORA",
             "[sunspire-orchid-harvest]",
         ],
@@ -305,6 +320,38 @@ GOLDEN_CASES: list[GoldenCaseFixture] = [
             "GRIM-UMBRAL-BOTANY permits harvest after 7 moon-phases only when the "
             "shadeglass orchid was grown entirely in shade "
             "[shadeglass-orchid-harvest]."
+        ),
+        "expect_abstention": False,
+    },
+    {
+        "case_id": "conditional-shadeglass-direct-sun",
+        "question": (
+            "According to GRIM-UMBRAL-BOTANY, what happens to the shadeglass orchid "
+            "harvest window if the plant receives direct sun exposure?"
+        ),
+        "expected_retrieved_id": "shadeglass-orchid-harvest",
+        "expected_ranked_ids": ["shadeglass-orchid-harvest", "sunspire-orchid-harvest"],
+        "collision_sibling_ids": ["sunspire-orchid-harvest"],
+        "expected_value": "invalidates",
+        "forbidden_values": ["10 moon-phases"],
+        "expected_grimoire_id": "GRIM-UMBRAL-BOTANY",
+        "required_qualifiers": ["direct sun exposure", "harvest window"],
+        "must_contain": [
+            "direct sun exposure",
+            "invalidates",
+            "harvest window",
+            "GRIM-UMBRAL-BOTANY",
+            "[shadeglass-orchid-harvest]",
+        ],
+        "forbidden": [
+            "10 moon-phases",
+            "full sun",
+            "GRIM-SOLAR-FLORA",
+            "[sunspire-orchid-harvest]",
+        ],
+        "expected_answer": (
+            "According to GRIM-UMBRAL-BOTANY, direct sun exposure invalidates the "
+            "shadeglass orchid harvest window [shadeglass-orchid-harvest]."
         ),
         "expect_abstention": False,
     },

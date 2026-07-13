@@ -24,7 +24,7 @@ Production retrieval systems can hide source attribution errors behind fluent, g
 
 | Capability | What It Does | How It Helps |
 |---|---|---|
-| **Executable Grimoire Fixture** | Keeps eight short corpus entries and six golden cases together in Python | Source facts and expected failures remain directly inspectable |
+| **Executable Grimoire Fixture** | Keeps eight short corpus entries and seven golden cases together in Python | Source facts and expected failures remain directly inspectable |
 | **Adversarial Retrieval Traps** | Exercises source-scoped numbers, near-synonyms, qualifiers, and genuine absence | Plausible wrong-source answers become detectable failures |
 | **Explicit NumPy Retrieval** | Shows normalization, cosine similarity, distance, top-2 ranking, and tie-breaking | Vector mechanics remain visible without a database abstraction |
 | **Validated Persistence** | Stores normalized rows and an inspectable manifest with corpus and vector fingerprints | Loading rejects incomplete files, invalid schema or policy fields, malformed entries, fingerprint mismatches, and row misalignment; the configured query path also rejects indexes stale relative to `corpus.py` |
@@ -165,9 +165,10 @@ Every entry has a stable id, verbatim text, `grimoire_id`, `folio`, subject, fac
 | `numeric-source-obsidian-dose` | `15 drams`, basalt, lunar eclipse, `GRIM-OBSIDIAN-PETAL` | `3 drams`, copper, after dusk, `GRIM-VERDANT` |
 | `near-synonym-moonpetal-vapor` | Moonpetal, `11 grains`, silver sleep vapor | Moonflower, `17 grains`, golden waking vapor |
 | `conditional-shadeglass-harvest` | `7 moon-phases` only when grown entirely in shade | `10 moon-phases` when grown in full sun |
+| `conditional-shadeglass-direct-sun` | Direct sun exposure invalidates the shadeglass harvest window | Sunspire permits `10 moon-phases` when grown in full sun |
 | `absent-moonpetal-dew-shelf-life` | Exact `INSUFFICIENT_CONTEXT` | No bottled-dew storage or spoilage duration exists |
 
-The separate `asterquartz-powdering` entry supplies `Mohs hardness 8`. Corpus text preserves `drams`, `grains`, `moon-phases`, and `Mohs hardness` verbatim rather than normalizing units.
+Each dosage case materializes one declared collision sibling in top-2 context and separately forbids answer leakage from both non-target dosage sources. The separate `asterquartz-powdering` entry supplies `Mohs hardness 8`. Corpus text preserves `drams`, `grains`, `moon-phases`, and `Mohs hardness` verbatim rather than normalizing units.
 
 ---
 
@@ -224,8 +225,8 @@ raw corpus dictionary
 |---|---|---|
 | Free deterministic contracts | `.venv/bin/python -m pytest eval/ -q` | Fixed embeddings and answers, provider fakes, exact contracts, plus canned-transport RagaliQ wiring |
 | Free deterministic branch coverage | `.venv/bin/python -m pytest --cov --cov-report=term-missing eval/ -q` | The same free suite measures application/adapter branches and enforces the measured 70% floor |
-| Paid all-golden OpenAI acceptance | `.venv/bin/python -m pytest -o addopts='' -m "openai and not rag_test" eval/ -q` | One corpus embedding batch, then live retrieval and generation for every golden case |
-| Paid cross-family semantic evaluation | `.venv/bin/python -m pytest -o addopts='' -m "openai and rag_test" --ragaliq-cost-limit 5.00 eval/ -q` | Live OpenAI answers judged by native RagaliQ Claude faithfulness and relevance |
+| Paid all-golden OpenAI acceptance | `.venv/bin/python -m pytest -o addopts='' -m "openai and not rag_test" eval/ -q` | One corpus embedding batch plus seven query embeddings and seven generations: 15 nominal OpenAI requests |
+| Paid cross-family semantic evaluation | `.venv/bin/python -m pytest -o addopts='' -m "openai and rag_test" --ragaliq-cost-limit 5.00 eval/ -q` | The same 15 nominal OpenAI requests, then six answerable cases judged by native RagaliQ Claude faithfulness and relevance |
 
 ### Markers
 

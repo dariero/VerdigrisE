@@ -14,8 +14,8 @@ description: "Run VerdigrisE's opt-in live OpenAI and RagaliQ Claude paths under
 
    Stop on deterministic failure; do not spend provider calls to diagnose a broken exact layer.
 2. Select exactly one paid command. Before requesting approval, report the exact command, selected cases, provider key names, models, nominal request fan-out, provider-retry uncertainty, and cost uncertainty without displaying credential values:
-   - OpenAI all-golden acceptance uses `text-embedding-3-small` for one corpus batch and six query embeddings, then `gpt-5.6-luna` for six generations: nominally 13 OpenAI requests.
-   - Cross-family semantic evaluation makes the same nominal 13 OpenAI requests, then evaluates five answerable cases with RagaliQ's installed `DEFAULT_JUDGE_MODEL`. Nominal Claude fan-out is 10 base requests plus one verification request per extracted claim, so the total is model-output-dependent.
+   - OpenAI all-golden acceptance uses `text-embedding-3-small` for one corpus batch and seven query embeddings, then `gpt-5.6-luna` for seven generations: nominally 15 OpenAI requests.
+   - Cross-family semantic evaluation makes the same nominal 15 OpenAI requests, then evaluates six answerable cases with RagaliQ's installed `DEFAULT_JUDGE_MODEL`. Nominal Claude fan-out is 12 base requests plus one verification request per extracted claim, so the total is model-output-dependent.
    - `pipeline.py ingest` makes one OpenAI corpus-embedding request. `pipeline.py ask` and live `ask()` each make one OpenAI query-embedding request and one generation request after an index exists.
    Inspect the installed provider SDK and RagaliQ transport retry settings before quoting a maximum. Provider-managed retries can multiply these nominal counts within one invocation.
 3. Obtain explicit approval for the exact command immediately before executing it. A general investigation request, an available API key, or approval for another tier is not approval. Treat every manually initiated retry as a new paid invocation.
