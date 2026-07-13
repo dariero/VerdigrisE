@@ -27,7 +27,7 @@ Production retrieval systems can hide source attribution errors behind fluent, g
 | **Executable Grimoire Fixture** | Keeps eight short corpus entries and six golden cases together in Python | Source facts and expected failures remain directly inspectable |
 | **Adversarial Retrieval Traps** | Exercises source-scoped numbers, near-synonyms, qualifiers, and genuine absence | Plausible wrong-source answers become detectable failures |
 | **Explicit NumPy Retrieval** | Shows normalization, cosine similarity, distance, top-2 ranking, and tie-breaking | Vector mechanics remain visible without a database abstraction |
-| **Validated Persistence** | Stores normalized rows and an inspectable manifest with corpus and vector fingerprints | Loading rejects incomplete files, fingerprint mismatches, and indexes stale relative to `corpus.py` |
+| **Validated Persistence** | Stores normalized rows and an inspectable manifest with corpus and vector fingerprints | Loading rejects incomplete files, invalid schema or policy fields, malformed entries, fingerprint mismatches, and row misalignment; the configured query path also rejects indexes stale relative to `corpus.py` |
 | **Exact Prompt Capture** | Preserves verbatim retrieved text, citation labels, request messages, and answer text | Every generation input is available for deterministic assertions and audit review |
 | **Deterministic-First Tests** | Uses fixed vectors, fixed answers, fake provider endpoints, and exact assertions by default | Local regression behavior does not depend on API availability or judge variance |
 | **All-Golden Provider Acceptance** | Runs every golden case through real OpenAI embeddings and generation when explicitly selected | The configured providers are checked without weakening the free default suite |
@@ -327,13 +327,13 @@ The four pipeline stages are:
 3. Build the exact citation-labelled context and generation messages.
 4. Generate without rewriting the response and capture every stage in `RagRecord`.
 
-Deterministic tests construct `NumpyVectorIndex` in memory. CLI `ingest` persists it under `.index/`; CLI `ask` reloads and validates it.
+Deterministic query tests construct `NumpyVectorIndex` in memory. Free integrity tests also run ingestion, persist and reload the index, and prove that malformed or stale state is rejected before provider initialization. CLI `ingest` persists the index under `.index/`; CLI `ask` reloads and validates it.
 
 ---
 
 ## Development
 
-Ruff is the repository's formatter and linter. Mypy strictly checks the application modules and RagaliQ adapter. Pytest-cov measures branch coverage over the same application/adapter scope. The free baseline is 70.02%, enforced as a clean integer `fail_under = 70`; paid provider paths remain excluded. Pre-commit runs the static tools and repository-hygiene hooks before commits. Every hook uses `uv run --no-sync` and the hash-locked `.venv`; hook execution does not create separate environments or resolve additional packages. The sandbox still has no build backend, package-publication layer, or task runner. uv owns environment creation and exact dependency synchronization.
+Ruff is the repository's formatter and linter. Mypy strictly checks the application modules and RagaliQ adapter. Pytest-cov measures branch coverage over the same application/adapter scope. The free baseline is 82.36%, enforced as a clean integer `fail_under = 81`; paid provider paths remain excluded. Pre-commit runs the static tools and repository-hygiene hooks before commits. Every hook uses `uv run --no-sync` and the hash-locked `.venv`; hook execution does not create separate environments or resolve additional packages. The sandbox still has no build backend, package-publication layer, or task runner. uv owns environment creation and exact dependency synchronization.
 
 GitHub Actions validates every ready pull request against its prospective merge result and validates `main` after each merge. CI installs the hash-locked Python 3.14 environment from a clean checkout, validates the pre-commit configuration, runs every repository hook, and runs the deterministic branch-coverage gate with OpenAI and RagaliQ paid markers explicitly excluded. Provider key variables are explicitly empty throughout the job, and the workflow does not reference provider secrets.
 

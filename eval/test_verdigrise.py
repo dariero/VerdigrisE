@@ -8,6 +8,8 @@ Ownership boundary:
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,11 +21,17 @@ from openai import OpenAI
 from pydantic import BaseModel, ConfigDict
 from ragaliq import RAGTestResult
 
+import pipeline as pipeline_module
 from config import (
     ABSTENTION_PHRASE,
+    DISTANCE_DEFINITION,
     EMBEDDING_MODEL,
     GENERATION_MODEL,
     GENERATION_TEMPERATURE,
+    INDEX_MANIFEST_FILENAME,
+    INDEX_SCHEMA_VERSION,
+    INDEX_VECTOR_FILENAME,
+    TIE_BREAK_RULE,
     TOP_K,
 )
 from corpus import CORPUS, GOLDEN_CASES, CorpusEntry, validate_corpus
@@ -102,6 +110,7 @@ class FixedEmbeddingProvider:
         self._vectors_by_text = {
             entry["text"]: _CORPUS_VECTORS[entry["id"]] for entry in CORPUS
         } | _QUESTION_VECTORS
+        self.calls: list[tuple[list[str], list[str], str, bool]] = []
 
     def embed(
         self,
@@ -111,11 +120,59 @@ class FixedEmbeddingProvider:
         stage: str,
         debug: bool = False,
     ) -> np.ndarray:
-        del input_ids, stage, debug
+        self.calls.append((list(inputs), list(input_ids), stage, debug))
         try:
             return np.asarray([self._vectors_by_text[text] for text in inputs], dtype=np.float32)
         except KeyError as exc:
             raise AssertionError(f"No fixed vector for input: {exc.args[0]!r}") from exc
+
+
+def _persist_fixed_index(
+    directory: Path, *, debug: bool = False
+) -> tuple[FixedEmbeddingProvider, NumpyVectorIndex]:
+    embedder = FixedEmbeddingProvider()
+    index = ingest_corpus(embedder=embedder, output_directory=directory, debug=debug)
+    return embedder, index
+
+
+def _read_manifest(directory: Path) -> dict[str, Any]:
+    manifest = json.loads((directory / INDEX_MANIFEST_FILENAME).read_text(encoding="utf-8"))
+    assert isinstance(manifest, dict)
+    return manifest
+
+
+def _write_manifest(directory: Path, manifest: object) -> None:
+    (directory / INDEX_MANIFEST_FILENAME).write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _rewrite_vectors(directory: Path, vectors: np.ndarray, *, update_digest: bool) -> None:
+    vector_path = directory / INDEX_VECTOR_FILENAME
+    np.save(vector_path, vectors, allow_pickle=False)
+    if update_digest:
+        manifest = _read_manifest(directory)
+        manifest["vectors_sha256"] = hashlib.sha256(vector_path.read_bytes()).hexdigest()
+        _write_manifest(directory, manifest)
+
+
+class _MatrixEmbeddingProvider:
+    model = EMBEDDING_MODEL
+
+    def __init__(self, matrix: object) -> None:
+        self._matrix = matrix
+
+    def embed(
+        self,
+        inputs: list[str],
+        *,
+        input_ids: list[str],
+        stage: str,
+        debug: bool = False,
+    ) -> Any:
+        del inputs, input_ids, stage, debug
+        return self._matrix
 
 
 class FixedAnswerGenerator:
@@ -375,16 +432,30 @@ def test_cosine_ties_use_ascending_stable_id() -> None:
     assert [hit.id for hit in hits] == sorted(entry["id"] for entry in entries)
 
 
-def test_index_persistence_preserves_rank_and_grimoire_metadata(tmp_path: Path) -> None:
-    embedder = FixedEmbeddingProvider()
-    vectors = embedder.embed(
-        [entry["text"] for entry in CORPUS],
-        input_ids=[entry["id"] for entry in CORPUS],
-        stage="corpus",
-    )
-    index = NumpyVectorIndex(dimension=vectors.shape[1], embedding_model=embedder.model)
-    index.index(CORPUS, vectors)
-    index.save(tmp_path)
+def test_unpaid_ingest_persists_a_reloadable_current_index(tmp_path: Path) -> None:
+    embedder, index = _persist_fixed_index(tmp_path, debug=True)
+    assert embedder.calls == [
+        (
+            [entry["text"] for entry in CORPUS],
+            [entry["id"] for entry in CORPUS],
+            "corpus",
+            True,
+        )
+    ]
+    assert (tmp_path / INDEX_MANIFEST_FILENAME).is_file()
+    assert (tmp_path / INDEX_VECTOR_FILENAME).is_file()
+    assert index.embedding_model == EMBEDDING_MODEL
+    assert index.dimension == len(next(iter(_CORPUS_VECTORS.values())))
+    assert index.indexed_corpus_sha256 == NumpyVectorIndex.corpus_sha256(CORPUS)
+
+    manifest = _read_manifest(tmp_path)
+    assert manifest["schema_version"] == INDEX_SCHEMA_VERSION
+    assert manifest["embedding_model"] == EMBEDDING_MODEL
+    assert manifest["dimension"] == index.dimension
+    assert manifest["distance_definition"] == DISTANCE_DEFINITION
+    assert manifest["tie_break_rule"] == TIE_BREAK_RULE
+    assert manifest["corpus_sha256"] == index.indexed_corpus_sha256
+
     loaded = NumpyVectorIndex.load(tmp_path)
     case = GOLDEN_BY_ID["numeric-source-verdigris-dose"]
     hits = loaded.search(np.asarray(_QUESTION_VECTORS[case.question], dtype=np.float32))
@@ -392,6 +463,271 @@ def test_index_persistence_preserves_rank_and_grimoire_metadata(tmp_path: Path) 
     assert hits[0].metadata["grimoire_id"] == "GRIM-VERDANT"
     assert hits[0].metadata["folio"] == 21
     assert hits[0].metadata["condition"] == ("distilled in copper and administered after dusk")
+
+
+def test_schema_v1_load_accepts_a_custom_model_and_unknown_manifest_fields(
+    tmp_path: Path,
+) -> None:
+    index = NumpyVectorIndex(dimension=1, embedding_model="custom-embedding-model")
+    index.index([CORPUS[0]], np.asarray([[2.0]], dtype=np.float32))
+    index.save(tmp_path)
+    manifest = _read_manifest(tmp_path)
+    manifest["future_extension"] = {"ignored": True}
+    _write_manifest(tmp_path, manifest)
+
+    loaded = NumpyVectorIndex.load(tmp_path)
+    assert loaded.dimension == 1
+    assert loaded.embedding_model == "custom-embedding-model"
+
+
+@pytest.mark.parametrize(
+    ("dimension", "embedding_model", "message"),
+    [
+        pytest.param(True, EMBEDDING_MODEL, "dimension", id="boolean-dimension"),
+        pytest.param(1.0, EMBEDDING_MODEL, "dimension", id="float-dimension"),
+        pytest.param(0, EMBEDDING_MODEL, "dimension", id="zero-dimension"),
+        pytest.param(1, "", "model", id="empty-model"),
+        pytest.param(1, "   ", "model", id="whitespace-model"),
+    ],
+)
+def test_index_constructor_rejects_invalid_identity(
+    dimension: object, embedding_model: object, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        NumpyVectorIndex(dimension=dimension, embedding_model=embedding_model)
+
+
+@pytest.mark.parametrize(
+    "matrix",
+    [
+        pytest.param([], id="not-an-array"),
+        pytest.param(np.ones(12, dtype=np.float32), id="not-a-matrix"),
+        pytest.param(np.ones((1, 12), dtype=np.float32), id="wrong-row-count"),
+        pytest.param(np.empty((len(CORPUS), 0), dtype=np.float32), id="zero-columns"),
+        pytest.param(
+            np.full((len(CORPUS), 12), np.nan, dtype=np.float32),
+            id="non-finite",
+        ),
+    ],
+)
+def test_unpaid_ingest_rejects_an_invalid_embedding_matrix(tmp_path: Path, matrix: object) -> None:
+    with pytest.raises(ValueError, match="Corpus embedder returned an invalid matrix"):
+        ingest_corpus(
+            embedder=_MatrixEmbeddingProvider(matrix),
+            output_directory=tmp_path,
+        )
+    assert not (tmp_path / INDEX_MANIFEST_FILENAME).exists()
+    assert not (tmp_path / INDEX_VECTOR_FILENAME).exists()
+
+
+@pytest.mark.parametrize(
+    "missing_filename",
+    [INDEX_MANIFEST_FILENAME, INDEX_VECTOR_FILENAME],
+)
+def test_index_load_rejects_an_incomplete_file_pair(tmp_path: Path, missing_filename: str) -> None:
+    _persist_fixed_index(tmp_path)
+    (tmp_path / missing_filename).unlink()
+    with pytest.raises(FileNotFoundError, match="No complete index"):
+        NumpyVectorIndex.load(tmp_path)
+
+
+def test_index_load_rejects_a_non_object_manifest(tmp_path: Path) -> None:
+    _persist_fixed_index(tmp_path)
+    _write_manifest(tmp_path, [])
+    with pytest.raises(ValueError, match="JSON object"):
+        NumpyVectorIndex.load(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        pytest.param("schema_version", True, "schema version", id="boolean-schema"),
+        pytest.param("schema_version", 1.0, "schema version", id="float-schema"),
+        pytest.param(
+            "schema_version",
+            INDEX_SCHEMA_VERSION + 1,
+            "schema version",
+            id="unsupported-schema",
+        ),
+        pytest.param("dimension", True, "dimension", id="boolean-dimension"),
+        pytest.param("dimension", 1.0, "dimension", id="float-dimension"),
+        pytest.param("dimension", 0, "dimension", id="zero-dimension"),
+        pytest.param("embedding_model", None, "model", id="missing-model"),
+        pytest.param("embedding_model", "", "model", id="empty-model"),
+        pytest.param("embedding_model", "   ", "model", id="whitespace-model"),
+    ],
+)
+def test_index_load_rejects_invalid_manifest_identity(
+    tmp_path: Path, field: str, value: object, message: str
+) -> None:
+    _persist_fixed_index(tmp_path)
+    manifest = _read_manifest(tmp_path)
+    manifest[field] = value
+    _write_manifest(tmp_path, manifest)
+    with pytest.raises(ValueError, match=message):
+        NumpyVectorIndex.load(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        pytest.param(
+            "distance_definition",
+            "raw dot product",
+            "distance definition",
+            id="distance",
+        ),
+        pytest.param(
+            "tie_break_rule",
+            "insertion order",
+            "tie-breaking rule",
+            id="tie-break",
+        ),
+    ],
+)
+def test_index_load_rejects_changed_retrieval_policy(
+    tmp_path: Path, field: str, value: str, message: str
+) -> None:
+    _persist_fixed_index(tmp_path)
+    manifest = _read_manifest(tmp_path)
+    manifest[field] = value
+    _write_manifest(tmp_path, manifest)
+    with pytest.raises(ValueError, match=message):
+        NumpyVectorIndex.load(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        pytest.param("not-list", "non-empty list", id="entries-not-list"),
+        pytest.param("empty-list", "non-empty list", id="entries-empty"),
+        pytest.param("entry-not-object", "contain id, text, and metadata", id="entry-not-object"),
+        pytest.param("missing-field", "contain id, text, and metadata", id="missing-field"),
+        pytest.param("empty-id", "non-empty string", id="empty-id"),
+        pytest.param("duplicate-id", "Duplicate indexed entry id", id="duplicate-id"),
+        pytest.param("empty-text", "text is invalid", id="empty-text"),
+        pytest.param("metadata-not-object", "metadata is invalid", id="metadata-not-object"),
+        pytest.param("missing-citation", "missing citation fields", id="missing-citation"),
+        pytest.param("invalid-grimoire", "grimoire_id is invalid", id="invalid-grimoire"),
+        pytest.param("invalid-folio", "folio is invalid", id="invalid-folio"),
+        pytest.param("no-citation", "no citation metadata", id="no-citation"),
+    ],
+)
+def test_index_load_rejects_invalid_entries(tmp_path: Path, mutation: str, message: str) -> None:
+    _persist_fixed_index(tmp_path)
+    manifest = _read_manifest(tmp_path)
+    entries = manifest["entries"]
+    assert isinstance(entries, list)
+
+    if mutation == "not-list":
+        manifest["entries"] = {}
+    elif mutation == "empty-list":
+        manifest["entries"] = []
+    elif mutation == "entry-not-object":
+        entries[0] = []
+    else:
+        entry = entries[0]
+        assert isinstance(entry, dict)
+        if mutation == "missing-field":
+            entry.pop("metadata")
+        elif mutation == "empty-id":
+            entry["id"] = ""
+        elif mutation == "duplicate-id":
+            second = entries[1]
+            assert isinstance(second, dict)
+            second["id"] = entry["id"]
+        elif mutation == "empty-text":
+            entry["text"] = ""
+        elif mutation == "metadata-not-object":
+            entry["metadata"] = []
+        else:
+            metadata = entry["metadata"]
+            assert isinstance(metadata, dict)
+            if mutation == "missing-citation":
+                metadata.pop("folio")
+            elif mutation == "invalid-grimoire":
+                metadata["grimoire_id"] = 1
+            elif mutation == "invalid-folio":
+                metadata["folio"] = True
+            elif mutation == "no-citation":
+                metadata["grimoire_id"] = None
+                metadata["folio"] = None
+            else:
+                raise AssertionError(f"Unhandled mutation: {mutation}")
+
+    _write_manifest(tmp_path, manifest)
+    with pytest.raises(ValueError, match=message):
+        NumpyVectorIndex.load(tmp_path)
+
+
+def test_index_load_rejects_a_corpus_fingerprint_mismatch(tmp_path: Path) -> None:
+    _persist_fixed_index(tmp_path)
+    manifest = _read_manifest(tmp_path)
+    entries = manifest["entries"]
+    assert isinstance(entries, list)
+    first = entries[0]
+    assert isinstance(first, dict)
+    first["text"] = f"{first['text']} Drifted."
+    _write_manifest(tmp_path, manifest)
+
+    with pytest.raises(ValueError, match="corpus fingerprint"):
+        NumpyVectorIndex.load(tmp_path)
+
+
+def test_index_load_rejects_a_vector_fingerprint_mismatch(tmp_path: Path) -> None:
+    _persist_fixed_index(tmp_path)
+    vector_path = tmp_path / INDEX_VECTOR_FILENAME
+    vectors = np.load(vector_path, allow_pickle=False)
+    vectors[0, 0] += np.float32(0.25)
+    _rewrite_vectors(tmp_path, vectors, update_digest=False)
+
+    with pytest.raises(ValueError, match="vector fingerprint"):
+        NumpyVectorIndex.load(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        pytest.param("row-misalignment", "not rank-aligned", id="row-misalignment"),
+        pytest.param("non-finite", "non-finite", id="non-finite"),
+        pytest.param("zero-vector", "zero vectors", id="zero-vector"),
+    ],
+)
+def test_index_load_rejects_invalid_persisted_vectors(
+    tmp_path: Path, mutation: str, message: str
+) -> None:
+    _persist_fixed_index(tmp_path)
+    vector_path = tmp_path / INDEX_VECTOR_FILENAME
+    vectors = np.load(vector_path, allow_pickle=False)
+    if mutation == "row-misalignment":
+        vectors = vectors[:-1]
+    elif mutation == "non-finite":
+        vectors[0, 0] = np.nan
+    elif mutation == "zero-vector":
+        vectors[0] = 0.0
+    else:
+        raise AssertionError(f"Unhandled mutation: {mutation}")
+    _rewrite_vectors(tmp_path, vectors, update_digest=True)
+
+    with pytest.raises(ValueError, match=message):
+        NumpyVectorIndex.load(tmp_path)
+
+
+def test_stale_current_corpus_is_rejected_before_provider_initialization(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _persist_fixed_index(tmp_path)
+    stale_corpus = [entry.copy() for entry in CORPUS]
+    stale_corpus[0]["text"] += " Drifted."
+    monkeypatch.setattr(pipeline_module, "CORPUS", stale_corpus)
+    monkeypatch.setattr(
+        pipeline_module,
+        "_real_client",
+        lambda: pytest.fail("provider client initialized before index validation"),
+    )
+
+    with pytest.raises(ValueError, match="stale relative to corpus.py"):
+        pipeline_module._real_pipeline(index_directory=tmp_path)
 
 
 def test_zero_vector_is_rejected() -> None:

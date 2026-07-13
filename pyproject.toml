@@ -54,7 +54,7 @@ source = [
 ]
 
 [tool.coverage.report]
-fail_under = 70
+fail_under = 81
 precision = 2
 show_missing = true
 
