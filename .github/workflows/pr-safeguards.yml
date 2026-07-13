@@ -40,4 +40,4 @@ jobs:
           uv pip check
 
       - name: Run the free deterministic suite
-        run: .venv/bin/python -m pytest -c pytest.ini eval/ -q
+        run: .venv/bin/python -m pytest eval/ -q

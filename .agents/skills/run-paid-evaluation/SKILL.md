@@ -5,10 +5,11 @@ description: "Run VerdigrisE's opt-in live OpenAI and RagaliQ Claude paths under
 
 # Run a paid evaluation
 
-1. Run the free deterministic suite first:
+1. Run the free deterministic suite and branch-coverage gate first:
 
    ```bash
-   .venv/bin/python -m pytest -c pytest.ini eval/ -q
+   .venv/bin/python -m pytest eval/ -q
+   .venv/bin/python -m pytest --cov --cov-report=term-missing eval/ -q
    ```
 
    Stop on deterministic failure; do not spend provider calls to diagnose a broken exact layer.
@@ -24,13 +25,13 @@ description: "Run VerdigrisE's opt-in live OpenAI and RagaliQ Claude paths under
    Paid all-golden OpenAI acceptance; requires `OPENAI_API_KEY`:
 
    ```bash
-   .venv/bin/python -m pytest -c pytest.ini -o addopts='' -m "openai and not rag_test" eval/ -q
+   .venv/bin/python -m pytest -o addopts='' -m "openai and not rag_test" eval/ -q
    ```
 
    Paid cross-family semantic evaluation; requires both `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`:
 
    ```bash
-   .venv/bin/python -m pytest -c pytest.ini -o addopts='' -m "openai and rag_test" --ragaliq-cost-limit 5.00 eval/ -q
+   .venv/bin/python -m pytest -o addopts='' -m "openai and rag_test" --ragaliq-cost-limit 5.00 eval/ -q
    ```
 
 6. Do not manually rerun a failed command, broaden marker selection, or run both tiers. Provider-managed retries may already have occurred inside the approved invocation. Report passes, failures, skips, and any recorded estimated cost. State that `--ragaliq-cost-limit` is an approximate post-test guard, not a strict pre-spend cap.

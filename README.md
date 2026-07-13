@@ -46,7 +46,7 @@ uv pip sync --preview-features pylock --require-hashes pylock.toml
 uv pip check
 ```
 
-`pyproject.toml` is the abstract dependency authority: NumPy, OpenAI, and Pydantic are runtime dependencies; pytest and RagaliQ are test/evaluation dependencies; mypy, pre-commit, pre-commit-hooks, and Ruff are development tooling. The universal, hash-bearing `pylock.toml` records the exact cross-platform environment. It was generated with uv 0.11.28 for Python 3.14, and installs the public `ragaliq==0.2.0` release rather than relying on an adjacent checkout.
+`pyproject.toml` is the abstract dependency authority: NumPy, OpenAI, and Pydantic are runtime dependencies; pytest, pytest-cov, and RagaliQ are test/evaluation dependencies; mypy, pre-commit, pre-commit-hooks, and Ruff are development tooling. The universal, hash-bearing `pylock.toml` records the exact cross-platform environment. It was generated with uv 0.11.28 for Python 3.14, and installs the public `ragaliq==0.2.0` release rather than relying on an adjacent checkout.
 
 An editable `../RagaliQ` install is an optional maintainer-only co-development override, not the public installation contract. Re-running the locked sync command restores the published RagaliQ artifact.
 
@@ -95,10 +95,10 @@ Run it from the repository root after paid ingestion:
 Run the free deterministic suite:
 
 ```bash
-.venv/bin/python -m pytest -c pytest.ini eval/ -q
+.venv/bin/python -m pytest eval/ -q
 ```
 
-`pytest.ini` excludes both paid provider acceptance and paid native judge tests by default.
+The native pytest configuration in `pyproject.toml` strictly registers markers and excludes both paid provider acceptance and paid native judge tests by default.
 
 ### CLI
 
@@ -221,9 +221,10 @@ raw corpus dictionary
 
 | Tier | Command | Calls and Ownership |
 |---|---|---|
-| Free deterministic contracts | `.venv/bin/python -m pytest -c pytest.ini eval/ -q` | Fixed embeddings and answers, provider fakes, exact contracts, plus canned-transport RagaliQ wiring |
-| Paid all-golden OpenAI acceptance | `.venv/bin/python -m pytest -c pytest.ini -o addopts='' -m "openai and not rag_test" eval/ -q` | One corpus embedding batch, then live retrieval and generation for every golden case |
-| Paid cross-family semantic evaluation | `.venv/bin/python -m pytest -c pytest.ini -o addopts='' -m "openai and rag_test" --ragaliq-cost-limit 5.00 eval/ -q` | Live OpenAI answers judged by native RagaliQ Claude faithfulness and relevance |
+| Free deterministic contracts | `.venv/bin/python -m pytest eval/ -q` | Fixed embeddings and answers, provider fakes, exact contracts, plus canned-transport RagaliQ wiring |
+| Free deterministic branch coverage | `.venv/bin/python -m pytest --cov --cov-report=term-missing eval/ -q` | The same free suite measures application/adapter branches and enforces the measured 70% floor |
+| Paid all-golden OpenAI acceptance | `.venv/bin/python -m pytest -o addopts='' -m "openai and not rag_test" eval/ -q` | One corpus embedding batch, then live retrieval and generation for every golden case |
+| Paid cross-family semantic evaluation | `.venv/bin/python -m pytest -o addopts='' -m "openai and rag_test" --ragaliq-cost-limit 5.00 eval/ -q` | Live OpenAI answers judged by native RagaliQ Claude faithfulness and relevance |
 
 ### Markers
 
@@ -307,8 +308,7 @@ RagaliQ's native pytest plugin supplies `rag_tester`, `ClaudeJudge`, retrying tr
 ├── models.py                    # RetrievedChunk, PromptMessage, and RagRecord
 ├── pipeline.py                  # Embed, index, retrieve, prompt, generate, and CLI
 ├── pylock.toml                  # Universal, hash-bearing exact environment
-├── pyproject.toml               # Non-package metadata and dependency authority
-├── pytest.ini                   # Free-default marker policy
+├── pyproject.toml               # Metadata, dependencies, pytest, and coverage policy
 └── eval/
     ├── __init__.py
     ├── conftest.py              # Flat-module import boundary
@@ -329,7 +329,7 @@ Deterministic tests construct `NumpyVectorIndex` in memory. CLI `ingest` persist
 
 ## Development
 
-Ruff is the repository's formatter and linter. Mypy strictly checks the application modules and RagaliQ adapter. Pre-commit runs both tools and repository-hygiene hooks before commits. Every hook uses `uv run --no-sync` and the hash-locked `.venv`; hook execution does not create separate environments or resolve additional packages. The sandbox still has no coverage tooling, build backend, package-publication layer, or task runner. uv owns environment creation and exact dependency synchronization.
+Ruff is the repository's formatter and linter. Mypy strictly checks the application modules and RagaliQ adapter. Pytest-cov measures branch coverage over the same application/adapter scope. The free baseline is 70.02%, enforced as a clean integer `fail_under = 70`; paid provider paths remain excluded. Pre-commit runs the static tools and repository-hygiene hooks before commits. Every hook uses `uv run --no-sync` and the hash-locked `.venv`; hook execution does not create separate environments or resolve additional packages. The sandbox still has no build backend, package-publication layer, or task runner. uv owns environment creation and exact dependency synchronization.
 
 Install the Git hook once per clone:
 
@@ -375,7 +375,13 @@ Apply Ruff's safe lint fixes, then format the tree:
 Run the free deterministic suite:
 
 ```bash
-.venv/bin/python -m pytest -c pytest.ini eval/ -q
+.venv/bin/python -m pytest eval/ -q
+```
+
+Run the same free suite with deterministic branch coverage over `config.py`, `corpus.py`, `models.py`, `pipeline.py`, and `eval/ragaliq_adapter.py`:
+
+```bash
+.venv/bin/python -m pytest --cov --cov-report=term-missing eval/ -q
 ```
 
 When dependency metadata changes, regenerate the standardized lock with the same Python policy:

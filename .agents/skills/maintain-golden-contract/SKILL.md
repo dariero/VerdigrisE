@@ -20,10 +20,11 @@ description: "Safely evolve VerdigrisE's executable corpus, adversarial golden c
 7. Preserve verbatim retrieved text, citation-labelled context, request-message capture, and rank alignment in `RagRecord`.
 8. Never weaken a deterministic expectation to accommodate a paid model result. A paid failure is an acceptance result for the configured providers, not evidence that the fixture should move to probabilistic ownership.
 9. Update `README.md` when the fixture table, public behavior, model configuration, ownership boundary, or documented command changes.
-10. Run only the free deterministic suite:
+10. Run only the free deterministic suite and branch-coverage gate:
 
     ```bash
-    .venv/bin/python -m pytest -c pytest.ini eval/ -q
+    .venv/bin/python -m pytest eval/ -q
+    .venv/bin/python -m pytest --cov --cov-report=term-missing eval/ -q
     ```
 
     Use `run-paid-evaluation` only after separate approval for a specific paid invocation.
