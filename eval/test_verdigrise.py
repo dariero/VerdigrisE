@@ -77,6 +77,7 @@ ANSWERABLE = [case for case in GOLDEN if not case.expect_abstention]
 ABSTAINING = [case for case in GOLDEN if case.expect_abstention]
 COLLISION_CASES = [case for case in ANSWERABLE if case.collision_sibling_ids]
 QUALIFIED_CASES = [case for case in ANSWERABLE if case.required_qualifiers]
+DOSAGE_CASES = [case for case in GOLDEN if case.case_id.startswith("numeric-source-")]
 
 
 # Dimensions isolate the dosage, vapor, harvest, hardness, and absent-query
@@ -97,6 +98,20 @@ _QUESTION_VECTORS: dict[str, list[float]] = {
     GOLDEN_BY_ID["numeric-source-obsidian-dose"].question: [4, 1, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0],
     GOLDEN_BY_ID["near-synonym-moonpetal-vapor"].question: [0, 0, 0, 0, 4, 4, 1, 0, 0, 0, 0, 0],
     GOLDEN_BY_ID["conditional-shadeglass-harvest"].question: [0, 0, 0, 0, 0, 0, 0, 4, 4, 1, 0, 0],
+    GOLDEN_BY_ID["conditional-shadeglass-direct-sun"].question: [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        4,
+        4,
+        3,
+        0,
+        0,
+    ],
     GOLDEN_BY_ID["absent-moonpetal-dew-shelf-life"].question: [0, 0, 0, 0, 4, 1, 0, 0, 0, 0, 0, 4],
 }
 
@@ -224,6 +239,10 @@ def test_fixture_units_and_genuine_absence_are_explicit() -> None:
     }
     for entry_id, literal in expected_unit_literals.items():
         assert literal in entries[entry_id]["text"]
+    assert (
+        "Direct sun exposure invalidates that harvest window."
+        in entries["shadeglass-orchid-harvest"]["text"]
+    )
     corpus_text = "\n".join(entry["text"] for entry in CORPUS)
     lowered = corpus_text.lower()
     for absent_term in (
@@ -252,6 +271,43 @@ def test_three_source_dosage_trap_has_distinct_sources_values_and_conditions() -
     joined = "\n".join(entry["text"] for entry in entries)
     for value in ("3 drams", "9 drams", "15 drams"):
         assert value in joined
+
+
+def test_each_dosage_case_forbids_every_non_target_source() -> None:
+    source_literals = {
+        "verdigris-dose-verdant": {
+            "3 drams",
+            "GRIM-VERDANT",
+            "distilled in copper",
+            "administered after dusk",
+            "[verdigris-dose-verdant]",
+        },
+        "verdigris-dose-amber": {
+            "9 drams",
+            "GRIM-AMBER",
+            "distilled in amber glass",
+            "administered at dawn",
+            "[verdigris-dose-amber]",
+        },
+        "verdigris-dose-obsidian": {
+            "15 drams",
+            "GRIM-OBSIDIAN-PETAL",
+            "distilled in basalt",
+            "lunar eclipse",
+            "[verdigris-dose-obsidian]",
+        },
+    }
+    assert len(DOSAGE_CASES) == len(source_literals)
+    for case in DOSAGE_CASES:
+        assert case.expected_retrieved_id in source_literals
+        expected_forbidden = set().union(
+            *(
+                literals
+                for source_id, literals in source_literals.items()
+                if source_id != case.expected_retrieved_id
+            )
+        )
+        assert expected_forbidden.issubset(case.forbidden)
 
 
 def test_near_synonym_pair_is_distinct_and_factually_conflicting() -> None:
