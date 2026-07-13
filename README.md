@@ -49,8 +49,6 @@ uv pip check
 
 `pyproject.toml` is the abstract dependency authority: NumPy, OpenAI, and Pydantic are runtime dependencies; pytest, pytest-cov, and RagaliQ are test/evaluation dependencies; mypy, pre-commit, pre-commit-hooks, and Ruff are development tooling. The universal, hash-bearing `pylock.toml` records the exact cross-platform environment. It was generated with uv 0.11.28 for Python 3.14, and installs the public `ragaliq==0.2.0` release rather than relying on an adjacent checkout.
 
-An editable `../RagaliQ` install is an optional maintainer-only co-development override, not the public installation contract. Re-running the locked sync command restores the published RagaliQ artifact.
-
 Set provider keys only for explicitly selected paid paths:
 
 ```bash
@@ -134,7 +132,7 @@ VerdigrisE splits evaluation between two owners — exact concerns belong to det
 | Prose grounding or faithfulness | RagaliQ | `faithfulness` evaluator |
 | Answer relevance | RagaliQ | `relevance` evaluator |
 
-The controlled suite is the authoritative exact regression layer. The paid OpenAI tier re-applies the golden contract to every case but remains opt-in. The paid RagaliQ tier receives only answerable cases after exact checks and owns no ids, numeric literals, units, qualifiers, citations, ordering, or abstention behavior.
+The controlled suite is the authoritative exact regression layer. The opt-in paid OpenAI tier runs every golden case through the configured embedding and generation providers, then checks a narrower live-acceptance subset: top-2 size and intended-source presence, materialized collisions and context literals, the near-synonym ordering constraint, exact abstention, required and forbidden answer literals and qualifiers, and the expected grimoire identifier and answer citation. It does not replace deterministic proof of exact fixed-vector ranks, distances, prompt bytes, canned answers, or provider request and response mappings. The paid RagaliQ tier receives only answerable cases after those live assertions and owns no ids, numeric literals, units, qualifiers, citations, ordering, or abstention behavior.
 
 ---
 
@@ -228,6 +226,8 @@ raw corpus dictionary
 | Paid all-golden OpenAI acceptance | `.venv/bin/python -m pytest -o addopts='' -m "openai and not rag_test" eval/ -q` | One corpus embedding batch plus seven query embeddings and seven generations: 15 nominal OpenAI requests |
 | Paid cross-family semantic evaluation | `.venv/bin/python -m pytest -o addopts='' -m "openai and rag_test" --ragaliq-cost-limit 5.00 eval/ -q` | The same 15 nominal OpenAI requests, then six answerable cases judged by native RagaliQ Claude faithfulness and relevance |
 
+The module-scoped `live_openai_records` fixture always creates records for all seven golden cases before a selected paid test runs. Selecting one parametrized node from either paid tier therefore still makes the full nominal 15 OpenAI requests: one corpus embedding request, seven query embedding requests, and seven generation requests. Provider retries can increase the actual request count.
+
 ### Markers
 
 ```python
@@ -256,7 +256,7 @@ VerdigrisE installs the published `ragaliq==0.2.0` artifact from PyPI. The relea
 
 Public objects used are `RagaliQ`, `RAGTestCase`, `RAGTestResult`, `BaseJudge`, `JudgeConfig`, `JudgeTransport`, `TransportResponse`, and `DEFAULT_JUDGE_MODEL`.
 
-RagaliQ 0.2.0 strips surrounding whitespace from the mapped query, response, and each context entry; the source `RagRecord` retains provider text verbatim. VerdigrisE deliberately leaves RagaliQ's `expected_answer` and `expected_facts` unset. Exact answers, facts, units, qualifiers, citations, ordering, and abstention remain deterministic pytest responsibilities.
+RagaliQ 0.2.0 strips surrounding whitespace from the mapped query, response, and each context entry; the source `RagRecord` retains provider text verbatim. The mapping passes `context=[record.context_payload]`, so both retrieved chunks are concatenated into one logical RagaliQ document. This integration therefore cannot expose per-chunk source attribution or context precision. VerdigrisE deliberately leaves RagaliQ's `expected_answer` and `expected_facts` unset. Exact answers, facts, units, qualifiers, citations, ordering, and abstention remain deterministic pytest responsibilities.
 
 Exact signatures relied upon:
 
