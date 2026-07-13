@@ -18,9 +18,10 @@ import json
 import os
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, TypedDict, cast
 
 import numpy as np
+from numpy.typing import NDArray
 from openai import OpenAI
 
 from config import (
@@ -39,6 +40,14 @@ from config import (
 from corpus import CORPUS, CorpusEntry, validate_corpus
 from models import PromptMessage, RagRecord, RetrievedChunk
 
+type _Float32Array = NDArray[np.float32]
+
+
+class _IndexEntry(TypedDict):
+    id: str
+    text: str
+    metadata: dict[str, object]
+
 
 class EmbeddingProvider(Protocol):
     model: str
@@ -50,7 +59,7 @@ class EmbeddingProvider(Protocol):
         input_ids: list[str],
         stage: str,
         debug: bool = False,
-    ) -> np.ndarray:
+    ) -> _Float32Array:
         """Return one vector row per input string."""
 
 
@@ -72,7 +81,7 @@ def _require_api_key() -> None:
 
 
 def _safe_embedding_debug(
-    *, model: str, stage: str, input_ids: list[str], matrix: np.ndarray
+    *, model: str, stage: str, input_ids: list[str], matrix: _Float32Array
 ) -> None:
     """Print shapes and stable ids, never input text, secrets, or vector values."""
 
@@ -98,7 +107,7 @@ class OpenAIEmbeddingProvider:
         input_ids: list[str],
         stage: str,
         debug: bool = False,
-    ) -> np.ndarray:
+    ) -> _Float32Array:
         if not inputs or len(inputs) != len(input_ids):
             raise ValueError("inputs and input_ids must be non-empty and rank-aligned")
 
@@ -178,11 +187,11 @@ class NumpyVectorIndex:
             raise ValueError("dimension must be positive")
         self.dimension = dimension
         self.embedding_model = embedding_model
-        self._vectors = np.empty((0, dimension), dtype=np.float32)
-        self._entries: list[dict[str, object]] = []
+        self._vectors: _Float32Array = np.empty((0, dimension), dtype=np.float32)
+        self._entries: list[_IndexEntry] = []
 
     @staticmethod
-    def _make_index_entries(entries: Sequence[CorpusEntry]) -> list[dict[str, object]]:
+    def _make_index_entries(entries: Sequence[CorpusEntry]) -> list[_IndexEntry]:
         return [
             {
                 "id": entry["id"],
@@ -195,7 +204,7 @@ class NumpyVectorIndex:
         ]
 
     @staticmethod
-    def _validate_index_entries(entries: object) -> list[dict[str, object]]:
+    def _validate_index_entries(entries: object) -> list[_IndexEntry]:
         if not isinstance(entries, list) or not entries:
             raise ValueError("Index manifest entries must be a non-empty list")
         seen_ids: set[str] = set()
@@ -226,10 +235,10 @@ class NumpyVectorIndex:
                 raise ValueError(f"Indexed folio is invalid for {chunk_id}")
             if grimoire_id is None and folio is None:
                 raise ValueError(f"Indexed entry has no citation metadata: {chunk_id}")
-        return entries
+        return cast(list[_IndexEntry], entries)
 
     @staticmethod
-    def _entries_sha256(entries: list[dict[str, object]]) -> str:
+    def _entries_sha256(entries: list[_IndexEntry]) -> str:
         canonical = json.dumps(
             entries,
             ensure_ascii=False,
@@ -259,7 +268,7 @@ class NumpyVectorIndex:
         return self._entries_sha256(self._entries)
 
     @staticmethod
-    def _normalize(matrix: np.ndarray) -> np.ndarray:
+    def _normalize(matrix: _Float32Array) -> _Float32Array:
         if matrix.ndim != 2 or matrix.shape[1] == 0:
             raise ValueError(f"Expected a two-dimensional vector matrix, got {matrix.shape}")
         if not np.isfinite(matrix).all():
@@ -269,7 +278,7 @@ class NumpyVectorIndex:
             raise ValueError("Cosine similarity is undefined for zero vectors")
         return (matrix / norms).astype(np.float32)
 
-    def index(self, entries: Sequence[CorpusEntry], vectors: np.ndarray) -> None:
+    def index(self, entries: Sequence[CorpusEntry], vectors: _Float32Array) -> None:
         """Insert one raw corpus entry beside each embedding vector row."""
 
         if self._entries:
@@ -282,7 +291,7 @@ class NumpyVectorIndex:
         self._vectors = self._normalize(vectors.astype(np.float32))
         self._entries = self._validate_index_entries(self._make_index_entries(entries))
 
-    def search(self, query_vector: np.ndarray, *, top_k: int = TOP_K) -> list[RetrievedChunk]:
+    def search(self, query_vector: _Float32Array, *, top_k: int = TOP_K) -> list[RetrievedChunk]:
         """Return best-first results using the documented tie-breaking rule."""
 
         if not self._entries:
@@ -307,7 +316,7 @@ class NumpyVectorIndex:
                 RetrievedChunk(
                     id=entry["id"],
                     text=entry["text"],
-                    metadata=dict(entry["metadata"]),  # type: ignore[arg-type]
+                    metadata=dict(entry["metadata"]),
                     distance=1.0 - similarity,
                     similarity=similarity,
                 )

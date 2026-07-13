@@ -46,7 +46,7 @@ uv pip sync --preview-features pylock --require-hashes pylock.toml
 uv pip check
 ```
 
-`pyproject.toml` is the abstract dependency authority: NumPy, OpenAI, and Pydantic are runtime dependencies; pytest and RagaliQ are test/evaluation dependencies; pre-commit, pre-commit-hooks, and Ruff are development tooling. The universal, hash-bearing `pylock.toml` records the exact cross-platform environment. It was generated with uv 0.11.28 for Python 3.14, and installs the public `ragaliq==0.2.0` release rather than relying on an adjacent checkout.
+`pyproject.toml` is the abstract dependency authority: NumPy, OpenAI, and Pydantic are runtime dependencies; pytest and RagaliQ are test/evaluation dependencies; mypy, pre-commit, pre-commit-hooks, and Ruff are development tooling. The universal, hash-bearing `pylock.toml` records the exact cross-platform environment. It was generated with uv 0.11.28 for Python 3.14, and installs the public `ragaliq==0.2.0` release rather than relying on an adjacent checkout.
 
 An editable `../RagaliQ` install is an optional maintainer-only co-development override, not the public installation contract. Re-running the locked sync command restores the published RagaliQ artifact.
 
@@ -329,7 +329,7 @@ Deterministic tests construct `NumpyVectorIndex` in memory. CLI `ingest` persist
 
 ## Development
 
-Ruff is the repository's formatter and linter. Pre-commit runs Ruff and repository-hygiene hooks before commits. Every hook uses `uv run --no-sync` and the hash-locked `.venv`; hook execution does not create separate environments or resolve additional packages. The sandbox still has no type checker, coverage tooling, build backend, package-publication layer, or task runner. uv owns environment creation and exact dependency synchronization.
+Ruff is the repository's formatter and linter. Mypy strictly checks the application modules and RagaliQ adapter. Pre-commit runs both tools and repository-hygiene hooks before commits. Every hook uses `uv run --no-sync` and the hash-locked `.venv`; hook execution does not create separate environments or resolve additional packages. The sandbox still has no coverage tooling, build backend, package-publication layer, or task runner. uv owns environment creation and exact dependency synchronization.
 
 Install the Git hook once per clone:
 
@@ -356,6 +356,13 @@ Check formatting and linting without changing files:
 ```bash
 .venv/bin/ruff format --check .
 .venv/bin/ruff check .
+```
+
+Run strict static checking over the application and adapter scope:
+
+```bash
+.venv/bin/python -m mypy \
+  config.py corpus.py models.py pipeline.py eval/ragaliq_adapter.py
 ```
 
 Apply Ruff's safe lint fixes, then format the tree:
