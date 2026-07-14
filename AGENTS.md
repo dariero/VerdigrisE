@@ -37,7 +37,7 @@ Any command that can contact OpenAI or Anthropic requires explicit approval for 
 - Preserve unrelated user work. Keep commits and pull requests atomic, stage explicit paths, and exclude secrets, `.env` files, `.index/`, caches, editor files, and other generated artifacts.
 - Use a concise conventional commit subject consistent with repository history. Do not add AI attribution trailers unless requested.
 - Before shipping, run every pre-commit hook against all files, run the supported free suite, and inspect the complete staged diff.
-- When asked to ship, open a ready pull request, request the repository-specific Codex review below, resolve actionable findings, and enable automatic squash merge. Do not update issues, boards, labels, milestones, releases, or branches unless separately requested.
+- When asked to ship, open a ready pull request, request the repository-specific Codex review below, resolve actionable findings, and enable automatic squash merge. After merge, return to synchronized `main` and delete only the obsolete merged local `codex/` task branch. Do not update issues, boards, labels, milestones, releases, remote branches, or unrelated local branches unless separately requested.
 - Use `.agents/skills/ship/SKILL.md` for the publishing workflow.
 
 ## Authoritative references
