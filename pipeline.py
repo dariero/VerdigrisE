@@ -42,6 +42,8 @@ from models import PromptMessage, RagRecord, RetrievedChunk
 
 type _Float32Array = NDArray[np.float32]
 
+_FLOAT32_UNIT_NORM_TOLERANCE = 1e-5
+
 
 class _IndexEntry(TypedDict):
     id: str
@@ -178,7 +180,8 @@ class NumpyVectorIndex:
     """Exact cosine index with explicit metadata and deterministic ranking.
 
     Stored rows are L2-normalized. Query rows are normalized at search time.
-    Similarity is their dot product. Distance is exactly one minus similarity.
+    Similarity is their dot product bounded to [-1, 1]. Distance is exactly one
+    minus similarity.
     Equal similarities are ordered by ascending stable chunk id.
     """
 
@@ -275,15 +278,34 @@ class NumpyVectorIndex:
         return self._entries_sha256(self._entries)
 
     @staticmethod
-    def _normalize(matrix: _Float32Array) -> _Float32Array:
+    def _unit_norms(matrix: _Float32Array) -> NDArray[np.float64]:
+        return np.linalg.norm(matrix.astype(np.float64), axis=1, keepdims=True)
+
+    @classmethod
+    def _validate_unit_rows(cls, matrix: _Float32Array) -> None:
+        if matrix.dtype.kind != "f" or matrix.dtype.itemsize != np.dtype(np.float32).itemsize:
+            raise ValueError("Vector matrix must use the float32 dtype")
+        if not np.isfinite(matrix).all():
+            raise ValueError("Vector matrix contains a non-finite value")
+        norms = cls._unit_norms(matrix)
+        if np.any(norms == 0.0):
+            raise ValueError("Cosine similarity is undefined for zero vectors")
+        if np.any(np.abs(norms - 1.0) > _FLOAT32_UNIT_NORM_TOLERANCE):
+            raise ValueError("Vector matrix contains a row outside the float32 unit-norm tolerance")
+
+    @classmethod
+    def _normalize(cls, matrix: _Float32Array) -> _Float32Array:
         if matrix.ndim != 2 or matrix.shape[1] == 0:
             raise ValueError(f"Expected a two-dimensional vector matrix, got {matrix.shape}")
         if not np.isfinite(matrix).all():
             raise ValueError("Vector matrix contains a non-finite value")
-        norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+        float64_matrix = matrix.astype(np.float64)
+        norms = np.linalg.norm(float64_matrix, axis=1, keepdims=True)
         if np.any(norms == 0.0):
             raise ValueError("Cosine similarity is undefined for zero vectors")
-        return (matrix / norms).astype(np.float32)
+        normalized = (float64_matrix / norms).astype(np.float32)
+        cls._validate_unit_rows(normalized)
+        return normalized
 
     def index(self, entries: Sequence[CorpusEntry], vectors: _Float32Array) -> None:
         """Insert one raw corpus entry beside each embedding vector row."""
@@ -309,7 +331,7 @@ class NumpyVectorIndex:
             raise ValueError(f"Expected query shape {(self.dimension,)}, got {query_vector.shape}")
 
         normalized_query = self._normalize(query_vector[None, :].astype(np.float32))[0]
-        similarities = self._vectors @ normalized_query
+        similarities = np.clip(self._vectors @ normalized_query, -1.0, 1.0)
         ranked_indices = sorted(
             range(len(self._entries)),
             key=lambda index: (-float(similarities[index]), self._entries[index]["id"]),
@@ -335,6 +357,7 @@ class NumpyVectorIndex:
 
         if not self._entries:
             raise RuntimeError("Cannot save an empty index")
+        self._validate_unit_rows(self._vectors)
         directory.mkdir(parents=True, exist_ok=True)
         vector_path = directory / INDEX_VECTOR_FILENAME
         manifest_path = directory / INDEX_MANIFEST_FILENAME
@@ -402,8 +425,10 @@ class NumpyVectorIndex:
         vectors = np.load(vector_path, allow_pickle=False)
         if vectors.shape != (len(entries), dimension):
             raise ValueError("Persisted vectors and manifest entries are not rank-aligned")
+        persisted_vectors = cast(_Float32Array, vectors)
+        cls._validate_unit_rows(persisted_vectors)
         index = cls(dimension=dimension, embedding_model=embedding_model)
-        index._vectors = index._normalize(vectors.astype(np.float32))
+        index._vectors = persisted_vectors
         index._entries = entries
         return index
 
@@ -540,6 +565,11 @@ def _real_client() -> OpenAI:
 
 def _real_pipeline(*, index_directory: Path = INDEX_DIRECTORY, debug: bool = False) -> RagPipeline:
     index = NumpyVectorIndex.load(index_directory)
+    if index.embedding_model != EMBEDDING_MODEL:
+        raise ValueError(
+            "Persisted index embedding model differs from configured model: "
+            f"{index.embedding_model!r} != {EMBEDDING_MODEL!r}; run ingest again"
+        )
     expected_corpus_digest = NumpyVectorIndex.corpus_sha256(CORPUS)
     if index.indexed_corpus_sha256 != expected_corpus_digest:
         raise ValueError("Persisted index is stale relative to corpus.py; run ingest again")

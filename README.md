@@ -27,7 +27,7 @@ Production retrieval systems can hide source attribution errors behind fluent, g
 | **Executable Grimoire Fixture** | Keeps eight short corpus entries and seven golden cases together in Python | Source facts and expected failures remain directly inspectable |
 | **Adversarial Retrieval Traps** | Exercises source-scoped numbers, near-synonyms, qualifiers, and genuine absence | Plausible wrong-source answers become detectable failures |
 | **Explicit NumPy Retrieval** | Shows normalization, cosine similarity, distance, top-2 ranking, and tie-breaking | Vector mechanics remain visible without a database abstraction |
-| **Validated Persistence** | Stores normalized rows and an inspectable manifest with corpus and vector fingerprints | Loading rejects incomplete files, invalid schema or policy fields, malformed entries, fingerprint mismatches, and row misalignment; the configured query path also rejects indexes stale relative to `corpus.py` |
+| **Validated Persistence** | Stores normalized `float32` rows and an inspectable manifest with corpus and vector fingerprints | Loading rejects incomplete files, invalid schema or policy fields, malformed entries, fingerprint mismatches, row misalignment, non-`float32` vectors, and rows outside the documented unit-norm tolerance; the configured query path also rejects indexes stale relative to `corpus.py` or the configured embedding model |
 | **Exact Prompt Capture** | Preserves verbatim retrieved text, citation labels, request messages, and answer text | Every generation input is available for deterministic assertions and audit review |
 | **Deterministic-First Tests** | Uses fixed vectors, fixed answers, fake provider endpoints, and exact assertions by default | Local regression behavior does not depend on API availability or judge variance |
 | **All-Golden Provider Acceptance** | Runs every golden case through real OpenAI embeddings and generation when explicitly selected | The configured providers are checked without weakening the free default suite |
@@ -87,7 +87,7 @@ Run it from the repository root after paid ingestion:
   'from pipeline import ask; print(ask("What quantity of pearl salt and which vapor are specified for ground moonpetal?").model_dump_json(indent=2))'
 ```
 
-> **Lifecycle:** `ask()` loads `.index/`, rejects a fixture-stale index, embeds the question separately, retrieves top-2, generates once, and returns a `RagRecord`. It makes paid OpenAI calls.
+> **Lifecycle:** `ask()` loads `.index/`, rejects an index stale relative to the fixture or configured embedding model before provider initialization, embeds the question separately, retrieves top-2, generates once, and returns a `RagRecord`. It makes paid OpenAI calls.
 
 ### Pytest Integration
 
@@ -127,7 +127,7 @@ VerdigrisE splits evaluation between two owners — exact concerns belong to det
 | Exact abstention phrase | Deterministic pytest | Byte-for-byte `INSUFFICIENT_CONTEXT` equality |
 | Verbatim context membership and order | Deterministic pytest | Captured `context_payload` |
 | Citation metadata and answer citations | Deterministic pytest | Raw entry, `RetrievedChunk`, context label, and answer |
-| Distance and similarity consistency | Deterministic pytest | `distance = 1 - cosine_similarity` |
+| Distance and similarity consistency | Deterministic pytest | Similarity in `[-1, 1]`, distance in `[0, 2]`, and exact `distance = 1 - cosine_similarity` |
 | Provider request and response mappings | Deterministic pytest | Controlled endpoint fakes |
 | Prose grounding or faithfulness | RagaliQ | `faithfulness` evaluator |
 | Answer relevance | RagaliQ | `relevance` evaluator |
@@ -201,7 +201,7 @@ The model validator rejects rank misalignment between `retrieved_ids`, `retrieve
 ```text
 raw corpus dictionary
   -> text-embedding-3-small corpus batch
-  -> float32 matrix aligned with stable ids and metadata
+  -> float64 norm calculation, then normalized float32 rows aligned with stable ids and metadata
   -> validated NumpyVectorIndex
   -> separate text-embedding-3-small query vector
   -> deterministic cosine top-2
@@ -334,13 +334,13 @@ The four pipeline stages are:
 3. Build the exact citation-labelled context and generation messages.
 4. Generate without rewriting the response and capture every stage in `RagRecord`.
 
-Deterministic query tests construct `NumpyVectorIndex` in memory. Free integrity tests also run ingestion, persist and reload the index, and prove that malformed or stale state is rejected before provider initialization. CLI `ingest` persists the index under `.index/`; CLI `ask` reloads and validates it.
+Deterministic query tests construct `NumpyVectorIndex` in memory. Free integrity tests also run ingestion, persist and reload the index, and prove that wrong-dtype, non-finite, zero, non-unit, fingerprint-mismatched, fixture-stale, and configured-model-stale state is rejected before provider initialization. Persisted rows must already use the `float32` dtype and have unit length within an absolute `1e-5` tolerance; loading validates the fingerprinted representation directly instead of casting or renormalizing it. CLI `ingest` persists the index under `.index/`; CLI `ask` reloads and validates it.
 
 ---
 
 ## Development
 
-Ruff is the repository's formatter and linter. Mypy strictly checks the application modules and RagaliQ adapter. Pytest-cov measures branch coverage over the same application/adapter scope. The free baseline is 85.05%, enforced as a clean integer `fail_under = 81`; paid provider paths remain excluded. Pre-commit runs the static tools and repository-hygiene hooks before commits. Every hook uses `uv run --no-sync` and the hash-locked `.venv`; hook execution does not create separate environments or resolve additional packages. The sandbox still has no build backend, package-publication layer, or task runner. uv owns environment creation and exact dependency synchronization.
+Ruff is the repository's formatter and linter. Mypy strictly checks the application modules and RagaliQ adapter. Pytest-cov measures branch coverage over the same application/adapter scope. The free baseline is 85.95%, enforced as a clean integer `fail_under = 81`; paid provider paths remain excluded. Pre-commit runs the static tools and repository-hygiene hooks before commits. Every hook uses `uv run --no-sync` and the hash-locked `.venv`; hook execution does not create separate environments or resolve additional packages. The sandbox still has no build backend, package-publication layer, or task runner. uv owns environment creation and exact dependency synchronization.
 
 GitHub Actions validates every ready pull request against its prospective merge result and validates `main` after each merge. CI installs the hash-locked Python 3.14 environment from a clean checkout, validates the pre-commit configuration, runs every repository hook, and runs the deterministic branch-coverage gate with OpenAI and RagaliQ paid markers explicitly excluded. Provider key variables are explicitly empty throughout the job, and the workflow does not reference provider secrets.
 
@@ -440,12 +440,13 @@ Model and provider integration remains behind explicit paid markers. A failing a
 | Teaching value | Database lifecycle | ANN index mechanics | Complete small-corpus data flow |
 | Later replacement | Collection adapter | Index plus metadata adapter | Existing provider/index/result seams |
 
-VerdigrisE keeps pure NumPy. The persisted implementation adds fixture and vector fingerprints without changing the visible cosine calculation:
+VerdigrisE keeps pure NumPy. Normalization uses a `float64` norm accumulator before storing `float32` rows, avoiding overflow or underflow for finite `float32` inputs. The persisted implementation validates those exact rows without silently transforming them, and bounds floating-point cosine results to `[-1, 1]` before ranking and capture. It adds fixture and vector fingerprints without changing the visible cosine calculation:
 
 ```text
-cosine_similarity = dot(L2_normalized_document, L2_normalized_query)
+raw_similarity = dot(L2_normalized_document, L2_normalized_query)
+cosine_similarity = clip(raw_similarity, -1, 1)
 distance = 1 - cosine_similarity
-rank = descending similarity, then ascending stable chunk id
+rank = descending bounded similarity, then ascending stable chunk id
 ```
 
 ---

@@ -429,7 +429,9 @@ def test_distance_similarity_and_rank_fields_align(
     assert record.retrieved_ids == [chunk.id for chunk in record.retrieved_chunks]
     assert record.distances == [chunk.distance for chunk in record.retrieved_chunks]
     for chunk in record.retrieved_chunks:
-        assert chunk.distance == pytest.approx(1.0 - chunk.similarity)
+        assert -1.0 <= chunk.similarity <= 1.0
+        assert 0.0 <= chunk.distance <= 2.0
+        assert chunk.distance == 1.0 - chunk.similarity
         assert set(chunk.model_dump()) == {
             "id",
             "text",
@@ -484,11 +486,54 @@ def test_prompt_builder_is_directly_callable_without_a_client(
 
 
 def test_cosine_ties_use_ascending_stable_id() -> None:
-    entries: list[CorpusEntry] = [CORPUS[0], CORPUS[7]]
+    positive_entries: list[CorpusEntry] = [CORPUS[0], CORPUS[7]]
+    negative_entry = CORPUS[1]
+    entries = [*positive_entries, negative_entry]
+    rounding_edge = [0.0862179771065712, 0.996276319026947]
     index = NumpyVectorIndex(dimension=2, embedding_model=EMBEDDING_MODEL)
-    index.index(entries, np.asarray([[1.0, 0.0], [1.0, 0.0]], dtype=np.float32))
-    hits = index.search(np.asarray([1.0, 0.0], dtype=np.float32), top_k=2)
-    assert [hit.id for hit in hits] == sorted(entry["id"] for entry in entries)
+    index.index(
+        entries,
+        np.asarray(
+            [rounding_edge, rounding_edge, [-value for value in rounding_edge]],
+            dtype=np.float32,
+        ),
+    )
+    hits = index.search(np.asarray(rounding_edge, dtype=np.float32), top_k=3)
+
+    assert [hit.id for hit in hits[:2]] == sorted(entry["id"] for entry in positive_entries)
+    assert hits[2].id == negative_entry["id"]
+    assert [hit.similarity for hit in hits] == [1.0, 1.0, -1.0]
+    assert [hit.distance for hit in hits] == [0.0, 0.0, 2.0]
+
+
+@pytest.mark.parametrize(
+    "vector",
+    [
+        pytest.param(
+            [np.finfo(np.float32).max, np.finfo(np.float32).max],
+            id="largest-finite",
+        ),
+        pytest.param(
+            [np.nextafter(np.float32(0.0), np.float32(1.0)), np.float32(0.0)],
+            id="smallest-positive-subnormal",
+        ),
+    ],
+)
+def test_finite_float32_extremes_normalize_without_collapsing(
+    tmp_path: Path, vector: list[np.float32]
+) -> None:
+    index = NumpyVectorIndex(dimension=2, embedding_model=EMBEDDING_MODEL)
+    matrix = np.asarray([vector], dtype=np.float32)
+    index.index([CORPUS[0]], matrix)
+    index.save(tmp_path)
+
+    hits = NumpyVectorIndex.load(tmp_path).search(matrix[0], top_k=1)
+
+    assert len(hits) == 1
+    assert 0.0 < hits[0].similarity <= 1.0
+    assert hits[0].similarity == pytest.approx(1.0, abs=1e-5)
+    assert 0.0 <= hits[0].distance < 1e-5
+    assert hits[0].distance == 1.0 - hits[0].similarity
 
 
 def test_unpaid_ingest_persists_a_reloadable_current_index(tmp_path: Path) -> None:
@@ -515,7 +560,20 @@ def test_unpaid_ingest_persists_a_reloadable_current_index(tmp_path: Path) -> No
     assert manifest["tie_break_rule"] == TIE_BREAK_RULE
     assert manifest["corpus_sha256"] == index.indexed_corpus_sha256
 
+    vector_path = tmp_path / INDEX_VECTOR_FILENAME
+    persisted_vectors = np.load(vector_path, allow_pickle=False)
+    assert persisted_vectors.dtype == np.dtype(np.float32)
+    np.testing.assert_allclose(
+        np.linalg.norm(persisted_vectors.astype(np.float64), axis=1),
+        1.0,
+        rtol=0.0,
+        atol=1e-5,
+    )
+
     loaded = NumpyVectorIndex.load(tmp_path)
+    roundtrip_directory = tmp_path / "roundtrip"
+    loaded.save(roundtrip_directory)
+    assert (roundtrip_directory / INDEX_VECTOR_FILENAME).read_bytes() == vector_path.read_bytes()
     case = GOLDEN_BY_ID["numeric-source-verdigris-dose"]
     hits = loaded.search(np.asarray(_QUESTION_VECTORS[case.question], dtype=np.float32))
     assert [hit.id for hit in hits] == case.expected_ranked_ids
@@ -530,6 +588,10 @@ def test_schema_v1_load_accepts_a_custom_model_and_unknown_manifest_fields(
     index = NumpyVectorIndex(dimension=1, embedding_model="custom-embedding-model")
     index.index([CORPUS[0]], np.asarray([[2.0]], dtype=np.float32))
     index.save(tmp_path)
+    vector_path = tmp_path / INDEX_VECTOR_FILENAME
+    vectors = np.load(vector_path, allow_pickle=False)
+    vectors[0, 0] = np.float32(1.0 + 5e-6)
+    _rewrite_vectors(tmp_path, vectors, update_digest=True)
     manifest = _read_manifest(tmp_path)
     manifest["future_extension"] = {"ignored": True}
     _write_manifest(tmp_path, manifest)
@@ -537,6 +599,9 @@ def test_schema_v1_load_accepts_a_custom_model_and_unknown_manifest_fields(
     loaded = NumpyVectorIndex.load(tmp_path)
     assert loaded.dimension == 1
     assert loaded.embedding_model == "custom-embedding-model"
+    roundtrip_directory = tmp_path / "roundtrip"
+    loaded.save(roundtrip_directory)
+    assert (roundtrip_directory / INDEX_VECTOR_FILENAME).read_bytes() == vector_path.read_bytes()
 
 
 @pytest.mark.parametrize(
@@ -748,8 +813,10 @@ def test_index_load_rejects_a_vector_fingerprint_mismatch(tmp_path: Path) -> Non
     ("mutation", "message"),
     [
         pytest.param("row-misalignment", "not rank-aligned", id="row-misalignment"),
+        pytest.param("wrong-dtype", "float32 dtype", id="wrong-dtype"),
         pytest.param("non-finite", "non-finite", id="non-finite"),
         pytest.param("zero-vector", "zero vectors", id="zero-vector"),
+        pytest.param("non-unit", "unit-norm tolerance", id="non-unit"),
     ],
 )
 def test_index_load_rejects_invalid_persisted_vectors(
@@ -760,10 +827,14 @@ def test_index_load_rejects_invalid_persisted_vectors(
     vectors = np.load(vector_path, allow_pickle=False)
     if mutation == "row-misalignment":
         vectors = vectors[:-1]
+    elif mutation == "wrong-dtype":
+        vectors = vectors.astype(np.float64)
     elif mutation == "non-finite":
         vectors[0, 0] = np.nan
     elif mutation == "zero-vector":
         vectors[0] = 0.0
+    elif mutation == "non-unit":
+        vectors[0] *= np.float32(2.0)
     else:
         raise AssertionError(f"Unhandled mutation: {mutation}")
     _rewrite_vectors(tmp_path, vectors, update_digest=True)
@@ -789,10 +860,42 @@ def test_stale_current_corpus_is_rejected_before_provider_initialization(
         pipeline_module._real_pipeline(index_directory=tmp_path)
 
 
+def test_stale_embedding_model_is_rejected_before_provider_initialization(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _persist_fixed_index(tmp_path)
+    manifest = _read_manifest(tmp_path)
+    manifest["embedding_model"] = "stale-embedding-model"
+    _write_manifest(tmp_path, manifest)
+    monkeypatch.setattr(
+        pipeline_module,
+        "_real_client",
+        lambda: pytest.fail("provider client initialized before index validation"),
+    )
+
+    with pytest.raises(ValueError, match="differs from configured model"):
+        pipeline_module._real_pipeline(index_directory=tmp_path)
+
+
 def test_zero_vector_is_rejected() -> None:
     index = NumpyVectorIndex(dimension=2, embedding_model=EMBEDDING_MODEL)
     with pytest.raises(ValueError, match="zero vectors"):
         index.index([CORPUS[0]], np.asarray([[0.0, 0.0]], dtype=np.float32))
+
+
+@pytest.mark.parametrize(
+    ("query", "message"),
+    [
+        pytest.param([0.0, 0.0], "zero vectors", id="zero"),
+        pytest.param([np.nan, 0.0], "non-finite", id="non-finite"),
+    ],
+)
+def test_invalid_query_vector_is_rejected(query: list[float], message: str) -> None:
+    index = NumpyVectorIndex(dimension=2, embedding_model=EMBEDDING_MODEL)
+    index.index([CORPUS[0]], np.asarray([[1.0, 0.0]], dtype=np.float32))
+
+    with pytest.raises(ValueError, match=message):
+        index.search(np.asarray(query, dtype=np.float32), top_k=1)
 
 
 class _FakeEmbeddingsEndpoint:
