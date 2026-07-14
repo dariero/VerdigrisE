@@ -132,7 +132,7 @@ VerdigrisE splits evaluation between two owners — exact concerns belong to det
 | Prose grounding or faithfulness | RagaliQ | `faithfulness` evaluator |
 | Answer relevance | RagaliQ | `relevance` evaluator |
 
-The controlled suite is the authoritative exact regression layer. The opt-in paid OpenAI tier runs every golden case through the configured embedding and generation providers, then checks a narrower live-acceptance subset: top-2 size and intended-source presence, materialized collisions and context literals, the near-synonym ordering constraint, exact abstention, required and forbidden answer literals and qualifiers, and the expected grimoire identifier and answer citation. It does not replace deterministic proof of exact fixed-vector ranks, distances, prompt bytes, canned answers, or provider request and response mappings. The paid RagaliQ tier receives only answerable cases after those live assertions and owns no ids, numeric literals, units, qualifiers, citations, ordering, or abstention behavior.
+The controlled suite is the authoritative exact regression layer. The full opt-in paid OpenAI tier runs every golden case through the configured embedding and generation providers, then checks a narrower live-acceptance subset: top-2 size and intended-source presence, materialized collisions and context literals, the near-synonym ordering constraint, exact abstention, required and forbidden answer literals and qualifiers, and the expected grimoire identifier and answer citation. It does not replace deterministic proof of exact fixed-vector ranks, distances, prompt bytes, canned answers, or provider request and response mappings. The paid RagaliQ tier receives only answerable cases after those live assertions and owns no ids, numeric literals, units, qualifiers, citations, ordering, or abstention behavior.
 
 ---
 
@@ -224,9 +224,9 @@ raw corpus dictionary
 | Free deterministic contracts | `.venv/bin/python -m pytest eval/ -q` | Fixed embeddings and answers, provider fakes, exact contracts, plus canned-transport RagaliQ wiring |
 | Free deterministic branch coverage | `.venv/bin/python -m pytest --cov --cov-report=term-missing eval/ -q` | The same free suite measures application/adapter branches and enforces the 81% floor |
 | Paid all-golden OpenAI acceptance | `.venv/bin/python -m pytest -o addopts='' -m "openai and not rag_test" eval/ -q` | One corpus embedding batch plus seven query embeddings and seven generations: 15 nominal OpenAI requests |
-| Paid cross-family semantic evaluation | `.venv/bin/python -m pytest -o addopts='' -m "openai and rag_test" --ragaliq-cost-limit 5.00 eval/ -q` | The same 15 nominal OpenAI requests, then six answerable cases judged by native RagaliQ Claude faithfulness and relevance |
+| Paid cross-family semantic evaluation | `.venv/bin/python -m pytest -o addopts='' -m "openai and rag_test" --ragaliq-cost-limit 5.00 eval/ -q` | One corpus embedding batch plus six query embeddings and six generations: 13 nominal OpenAI requests; then six answerable cases judged by native RagaliQ Claude faithfulness and relevance |
 
-The module-scoped `live_openai_records` fixture always creates records for all seven golden cases before a selected paid test runs. Selecting one parametrized node from either paid tier therefore still makes the full nominal 15 OpenAI requests: one corpus embedding request, seven query embedding requests, and seven generation requests. Provider retries can increase the actual request count.
+The module-scoped paid pipeline embeds the corpus once, while each selected parametrized node asks only its own case. For `n` selected nodes from one paid tier, the nominal OpenAI fan-out is `1 + 2n` requests: one corpus embedding, `n` query embeddings, and `n` generations. A single selected node therefore makes 3 nominal OpenAI requests. The complete all-golden tier remains 15 requests for seven cases; the complete semantic tier makes 13 OpenAI requests for six answerable cases before RagaliQ judging. Provider-managed retries can increase the actual request count.
 
 ### Markers
 
