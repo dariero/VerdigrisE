@@ -336,6 +336,8 @@ The four pipeline stages are:
 
 Deterministic query tests construct `NumpyVectorIndex` in memory. Free integrity tests also run ingestion, persist and reload the index, and prove that wrong-dtype, non-finite, zero, non-unit, fingerprint-mismatched, fixture-stale, and configured-model-stale state is rejected before provider initialization. Persisted rows must already use the `float32` dtype and have unit length within an absolute `1e-5` tolerance; loading validates the fingerprinted representation directly instead of casting or renormalizing it. CLI `ingest` persists the index under `.index/`; CLI `ask` reloads and validates it.
 
+`save()` stages both index files beside their destinations and uses `os.replace` for each destination separately, so replacement is atomic per file rather than across the pair. For a pair that remains unchanged while `load()` reads it, requiring both files plus manifest fingerprints and structural checks makes incomplete or mismatched state fail closed. The pair is not crash-transactional and concurrent access is unsupported: there is no durability sync, locking, rollback, or versioned-generation switch.
+
 ---
 
 ## Development
