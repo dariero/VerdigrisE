@@ -1,4 +1,4 @@
-# Changes to protected policy and contract surfaces require maintainer review.
+# Route changes to protected policy and contract surfaces to the maintainer.
 /.github/ @dariero
 /AGENTS.md @dariero
 /.agents/skills/ @dariero
@@ -6,6 +6,7 @@
 /SECURITY.md @dariero
 /.env.example @dariero
 /.gitignore @dariero
+/.pre-commit-config.yaml @dariero
 /.python-version @dariero
 /pyproject.toml @dariero
 /pylock.toml @dariero

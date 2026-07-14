@@ -29,12 +29,51 @@ description: "Publish a completed VerdigrisE change by validating the atomic dif
    @codex review for deterministic/RagaliQ ownership, dependency reproducibility, Python 3.14 compatibility, public-clone portability, paid-call safety, golden-fixture integrity, marker correctness, public API compatibility, and unintended behaviour changes
    ```
 
-10. Wait for Codex review and any repository checks to complete. Resolve every actionable finding; after a pushed fix, rerun the free suite and obtain updated review coverage. Do not enable automatic merge while an actionable finding or failing check remains.
-11. Verify that the ready pull request targets `main`, is mergeable, and contains only the intended atomic change. Enable automatic merge using the squash method:
+10. Wait for Codex review and every repository check to complete. Resolve every actionable finding. Any push changes the pull-request head and invalidates all earlier Codex review coverage: rerun the free suite, post the canonical review request again, and wait for a new completed review before proceeding. Do not enable automatic merge while an actionable finding, unresolved review thread, or failing check remains.
+11. Prove that Codex reviewed the current pull-request head. Read the latest completed Codex review response, record the SHA shown in its `Reviewed commit` field, resolve that reference to a full commit SHA, and require exact equality with the current `headRefOid`:
 
     ```bash
-    gh pr merge --auto --squash <PR>
+    PR_NUMBER='replace-with-PR-number'
+    CODEX_REVIEWED_REF='replace-with-latest-Codex-reviewed-SHA'
+    pr_head=$(gh pr view "$PR_NUMBER" --json headRefOid --jq .headRefOid)
+    codex_reviewed_head=$(gh api "repos/{owner}/{repo}/commits/$CODEX_REVIEWED_REF" --jq .sha)
+    test "$codex_reviewed_head" = "$pr_head"
+    ```
+
+    Do not infer exact-head coverage from a review timestamp, reaction, or review of an earlier commit. If the latest completed Codex response does not identify a reviewed commit, request a manual exact-head review and wait. Repeat this equality gate immediately before enabling automatic merge so a concurrent push cannot make the review stale.
+12. Verify that the ready pull request targets `main`, is mergeable, and contains only the intended atomic change. Enable automatic merge using the squash method:
+
+    ```bash
+    : "${PR_NUMBER:?set PR_NUMBER to the pull-request number}"
+    : "${CODEX_REVIEWED_REF:?set CODEX_REVIEWED_REF to the latest reviewed SHA}"
+    pr_head=$(gh pr view "$PR_NUMBER" --json headRefOid --jq .headRefOid)
+    codex_reviewed_head=$(gh api "repos/{owner}/{repo}/commits/$CODEX_REVIEWED_REF" --jq .sha)
+    test "$codex_reviewed_head" = "$pr_head"
+    gh pr merge --auto --squash --match-head-commit "$pr_head" "$PR_NUMBER"
     ```
 
     Report any branch-protection, review, or check requirement that prevents auto-merge.
-12. Do not update issues, boards, labels, milestones, releases, or delete local or remote branches.
+13. Wait until GitHub reports the pull request as `MERGED`, then return the workspace to a clean, synchronized `main`. Delete only the obsolete local task branch after proving that it is the merged pull request's `codex/` head. Squash merging means the guarded local deletion requires `-D` because the task commit is not an ancestor of `main`:
+
+    ```bash
+    : "${PR_NUMBER:?set PR_NUMBER to the merged pull-request number}"
+    test "$(gh pr view "$PR_NUMBER" --json state --jq .state)" = "MERGED"
+    test -z "$(git status --porcelain)"
+    task_branch=$(git branch --show-current)
+    test "${task_branch#codex/}" != "$task_branch"
+    pr_head=$(gh pr view "$PR_NUMBER" --json headRefOid --jq .headRefOid)
+    test "$(git rev-parse "$task_branch")" = "$pr_head"
+    git switch main
+    git fetch --prune origin
+    git pull --ff-only origin main
+    test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+    test -z "$(git status --porcelain)"
+    git branch -D "$task_branch"
+    test -z "$(git branch --list "$task_branch")"
+    test "$(git branch --show-current)" = "main"
+    test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+    test -z "$(git status --porcelain)"
+    ```
+
+    Never manually delete the remote task branch; allow the repository's automatic branch deletion to own that action, and let `git fetch --prune` remove the obsolete tracking reference. Never delete or modify an unrelated local or remote branch. Stop and report the mismatch instead of weakening any guard.
+14. Do not update issues, boards, labels, milestones, or releases.
