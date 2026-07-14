@@ -43,6 +43,8 @@ from eval.ragaliq_adapter import (
 )
 from models import PromptMessage, RagRecord
 from pipeline import (
+    AnswerGenerator,
+    EmbeddingProvider,
     GenerationResponseError,
     NumpyVectorIndex,
     OpenAIAnswerGenerator,
@@ -1092,26 +1094,41 @@ requires_anthropic = pytest.mark.skipif(
 )
 
 
-@pytest.fixture(scope="module")
-def live_openai_records(
-    tmp_path_factory: pytest.TempPathFactory,
-) -> dict[str, RagRecord]:
-    """Paid fixture: embed once, then ask every golden question once."""
+def _build_ingested_pipeline(
+    *,
+    embedder: EmbeddingProvider,
+    generator: AnswerGenerator,
+    output_directory: Path,
+    debug: bool = False,
+) -> RagPipeline:
+    """Embed the corpus once without asking any golden question eagerly."""
 
-    client = OpenAI()
-    embedder = OpenAIEmbeddingProvider(client)
     index = ingest_corpus(
         embedder=embedder,
+        output_directory=output_directory,
+        debug=debug,
+    )
+    return RagPipeline(
+        index=index,
+        embedder=embedder,
+        generator=generator,
+        debug=debug,
+    )
+
+
+@pytest.fixture(scope="module")
+def live_openai_pipeline(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> RagPipeline:
+    """Paid fixture: embed the corpus once; selected tests ask their own case."""
+
+    client = OpenAI()
+    return _build_ingested_pipeline(
+        embedder=OpenAIEmbeddingProvider(client),
+        generator=OpenAIAnswerGenerator(client),
         output_directory=tmp_path_factory.mktemp("live-openai-index"),
         debug=True,
     )
-    pipeline = RagPipeline(
-        index=index,
-        embedder=embedder,
-        generator=OpenAIAnswerGenerator(client),
-        debug=True,
-    )
-    return {case.case_id: pipeline.ask(case.question) for case in GOLDEN}
 
 
 def _assert_live_golden_contract(case: GoldenCase, record: RagRecord) -> None:
@@ -1156,16 +1173,60 @@ def _assert_live_golden_contract(case: GoldenCase, record: RagRecord) -> None:
     assert f"[{case.expected_retrieved_id}]" in record.answer
 
 
+def _ask_and_assert_live_case(pipeline: RagPipeline, case: GoldenCase) -> RagRecord:
+    """Ask one selected case and enforce exact ownership before semantic judging."""
+
+    record = pipeline.ask(case.question)
+    _assert_live_golden_contract(case, record)
+    return record
+
+
+@pytest.mark.parametrize(
+    "selected_cases",
+    [
+        pytest.param(GOLDEN[:1], id="one-selected-case"),
+        pytest.param(ANSWERABLE, id="six-answerable-cases"),
+        pytest.param(GOLDEN, id="seven-golden-cases"),
+    ],
+)
+def test_paid_pipeline_fan_out_matches_selected_cases(
+    tmp_path: Path,
+    selected_cases: list[GoldenCase],
+) -> None:
+    embedder = FixedEmbeddingProvider()
+    generator = FixedAnswerGenerator()
+    pipeline = _build_ingested_pipeline(
+        embedder=embedder,
+        generator=generator,
+        output_directory=tmp_path,
+    )
+
+    assert [call[2] for call in embedder.calls] == ["corpus"]
+    assert generator.calls == []
+
+    records = [_ask_and_assert_live_case(pipeline, case) for case in selected_cases]
+    selected_questions = [case.question for case in selected_cases]
+
+    assert [record.question for record in records] == selected_questions
+    assert [call[0] for call in embedder.calls[1:]] == [
+        [question] for question in selected_questions
+    ]
+    assert [call[1] for call in embedder.calls[1:]] == [["<query>"] for _ in selected_questions]
+    assert [call[2] for call in embedder.calls[1:]] == ["query" for _ in selected_questions]
+    assert [question for question, _ in generator.calls] == selected_questions
+    assert len(embedder.calls) + len(generator.calls) == 1 + 2 * len(selected_cases)
+
+
 @pytest.mark.openai
 @requires_openai
 @pytest.mark.parametrize("case", GOLDEN, ids=lambda case: case.case_id)
 def test_real_openai_all_golden_acceptance(
     case: GoldenCase,
-    live_openai_records: dict[str, RagRecord],
+    live_openai_pipeline: RagPipeline,
 ) -> None:
     """Paid: every golden case constrains the configured retrieval and generation models."""
 
-    _assert_live_golden_contract(case, live_openai_records[case.case_id])
+    _ask_and_assert_live_case(live_openai_pipeline, case)
 
 
 @pytest.mark.openai
@@ -1175,13 +1236,12 @@ def test_real_openai_all_golden_acceptance(
 @pytest.mark.parametrize("case", ANSWERABLE, ids=lambda case: case.case_id)
 def test_ragaliq_claude_semantic_residue_on_live_answers(
     case: GoldenCase,
-    live_openai_records: dict[str, RagRecord],
+    live_openai_pipeline: RagPipeline,
     rag_tester: Any,
 ) -> None:
     """Paid: native cross-family judge owns faithfulness and answer relevance only."""
 
-    record = live_openai_records[case.case_id]
-    _assert_live_golden_contract(case, record)
+    record = _ask_and_assert_live_case(live_openai_pipeline, case)
     test_case = to_ragaliq_case(record, case_id=case.case_id)
     result = rag_tester.evaluate(test_case)
     assert result.passed
