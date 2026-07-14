@@ -113,7 +113,7 @@ The native pytest configuration in `pyproject.toml` strictly registers markers a
   --debug
 ```
 
-Safe debug output includes only stage, model, input count, vector dimensions, matrix shape, and stable ids. It does not print corpus text, query text, vector values, or secrets.
+With `--debug`, the additional `verdigrise_embedding_debug` line includes only stage, model, input count, vector dimensions, matrix shape, and stable ids; that diagnostic line does not print corpus text, query text, vector values, or secrets. The normal `ask` command output still prints the complete `RagRecord`, including the question, retrieved text, context payload, generation messages, and answer, so treat aggregate stdout as content-bearing.
 
 ---
 
