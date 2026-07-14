@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -36,6 +35,7 @@ from config import (
     TOP_K,
 )
 from corpus import CORPUS, GOLDEN_CASES, CorpusEntry, validate_corpus
+from eval import conftest as eval_conftest
 from eval.ragaliq_adapter import (
     CannedJudgeTransport,
     build_ragaliq_runner,
@@ -1187,14 +1187,82 @@ def test_ragaliq_canned_runner_executes_structural_wiring_locally(
     ]
 
 
-requires_openai = pytest.mark.skipif(
-    not os.environ.get("OPENAI_API_KEY"),
-    reason="OPENAI_API_KEY is required for explicitly selected paid tests",
+def _marked_item(*markers: str) -> Any:
+    selected = set(markers)
+    return SimpleNamespace(get_closest_marker=lambda name: object() if name in selected else None)
+
+
+@pytest.mark.parametrize(
+    ("markers", "environment", "expected"),
+    [
+        pytest.param((), {}, [], id="free-node"),
+        pytest.param(("openai",), {}, ["OPENAI_API_KEY"], id="openai-missing"),
+        pytest.param(
+            ("openai",),
+            {"OPENAI_API_KEY": ""},
+            ["OPENAI_API_KEY"],
+            id="openai-empty",
+        ),
+        pytest.param(
+            ("openai",),
+            {"OPENAI_API_KEY": "present"},
+            [],
+            id="openai-present-without-anthropic",
+        ),
+        pytest.param(("rag_test",), {}, ["ANTHROPIC_API_KEY"], id="anthropic-missing"),
+        pytest.param(
+            ("openai", "rag_test"),
+            {"OPENAI_API_KEY": "present"},
+            ["ANTHROPIC_API_KEY"],
+            id="semantic-anthropic-missing",
+        ),
+        pytest.param(
+            ("openai", "rag_test"),
+            {"OPENAI_API_KEY": "present", "ANTHROPIC_API_KEY": "present"},
+            [],
+            id="semantic-credentials-present",
+        ),
+    ],
 )
-requires_anthropic = pytest.mark.skipif(
-    not os.environ.get("ANTHROPIC_API_KEY"),
-    reason="ANTHROPIC_API_KEY is required for explicitly selected RagaliQ judge tests",
-)
+def test_paid_credential_preflight_requires_only_selected_marker_keys(
+    markers: tuple[str, ...], environment: dict[str, str], expected: list[str]
+) -> None:
+    item = _marked_item(*markers)
+
+    assert eval_conftest._missing_paid_credentials([item], environment) == expected
+
+
+def test_paid_credential_preflight_preserves_credential_free_collection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    session = SimpleNamespace(
+        config=SimpleNamespace(option=SimpleNamespace(collectonly=True)),
+        items=[_marked_item("openai", "rag_test")],
+    )
+
+    eval_conftest.pytest_collection_finish(session)
+
+
+def test_paid_credential_preflight_fails_before_selected_paid_tests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    session = SimpleNamespace(
+        config=SimpleNamespace(option=SimpleNamespace(collectonly=False)),
+        items=[_marked_item("openai", "rag_test")],
+    )
+
+    with pytest.raises(
+        pytest.UsageError,
+        match=(
+            "Explicitly selected paid tests require non-empty environment variables: "
+            "ANTHROPIC_API_KEY, OPENAI_API_KEY"
+        ),
+    ):
+        eval_conftest.pytest_collection_finish(session)
 
 
 def _build_ingested_pipeline(
@@ -1321,7 +1389,6 @@ def test_paid_pipeline_fan_out_matches_selected_cases(
 
 
 @pytest.mark.openai
-@requires_openai
 @pytest.mark.parametrize("case", GOLDEN, ids=lambda case: case.case_id)
 def test_real_openai_all_golden_acceptance(
     case: GoldenCase,
@@ -1334,8 +1401,6 @@ def test_real_openai_all_golden_acceptance(
 
 @pytest.mark.openai
 @pytest.mark.rag_test
-@requires_openai
-@requires_anthropic
 @pytest.mark.parametrize("case", ANSWERABLE, ids=lambda case: case.case_id)
 def test_ragaliq_claude_semantic_residue_on_live_answers(
     case: GoldenCase,
