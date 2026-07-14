@@ -237,7 +237,7 @@ The module-scoped paid pipeline embeds the corpus once, while each selected para
 @pytest.mark.rag_test # Paid native RagaliQ Claude judge calls
 ```
 
-The semantic test carries both markers because it judges live OpenAI answers. `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are independently checked before the corresponding fixtures execute.
+The semantic test carries both markers because it judges live OpenAI answers. Before any provider fixture executes, selected `openai` nodes fail if `OPENAI_API_KEY` is unset or empty, and selected `rag_test` nodes fail if `ANTHROPIC_API_KEY` is unset or empty. Credential-free `--collect-only` remains available for inspecting node selection.
 
 ---
 
