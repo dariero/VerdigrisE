@@ -53,7 +53,7 @@ Any command that can contact OpenAI or Anthropic requires explicit approval for 
 
 Report only actionable issues introduced by the pull request, with the affected path and concrete consequence. Prioritize correctness, safety, compatibility, reproducibility, and regression risk; omit style-only findings already clear from local conventions.
 
-- Check retrieval rank, stable-id tie-breaking, distance calculation, citations, prompt bytes, index schema and fingerprints, atomic persistence, generation parsing, and `RagRecord` alignment for unintended behavior changes.
+- Check retrieval rank, stable-id tie-breaking, distance calculation, citations, prompt bytes, index schema and fingerprints, per-file atomic replacement, fail-closed validation of a stable persisted pair, generation parsing, and `RagRecord` alignment for unintended behavior changes. Do not claim crash transactionality or concurrent reader/writer safety; the current implementation has no durability sync, locking, rollback, or versioned-generation switch.
 - Reject transfers of exact facts, units, qualifiers, ordering, citations, or abstention from deterministic pytest to probabilistic RagaliQ judging.
 - Flag any path that could execute OpenAI or Anthropic calls without an explicit paid marker and per-run approval.
 - Require `pyproject.toml` and `pylock.toml` consistency, hashes, Python `==3.14.*` resolution, and published-package provenance; flag unexplained lock churn.
