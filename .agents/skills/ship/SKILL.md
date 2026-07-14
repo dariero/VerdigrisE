@@ -44,6 +44,7 @@ description: "Publish a completed VerdigrisE change by validating the atomic dif
 12. Verify that the ready pull request targets `main`, is mergeable, and contains only the intended atomic change. Enable automatic merge using the squash method:
 
     ```bash
+    set -euo pipefail
     : "${PR_NUMBER:?set PR_NUMBER to the pull-request number}"
     : "${CODEX_REVIEWED_REF:?set CODEX_REVIEWED_REF to the latest reviewed SHA}"
     pr_head=$(gh pr view "$PR_NUMBER" --json headRefOid --jq .headRefOid)
@@ -56,6 +57,7 @@ description: "Publish a completed VerdigrisE change by validating the atomic dif
 13. Wait until GitHub reports the pull request as `MERGED`, then return the workspace to a clean, synchronized `main`. Delete only the obsolete local task branch after proving that it is the merged pull request's `codex/` head. Squash merging means the guarded local deletion requires `-D` because the task commit is not an ancestor of `main`:
 
     ```bash
+    set -euo pipefail
     : "${PR_NUMBER:?set PR_NUMBER to the merged pull-request number}"
     test "$(gh pr view "$PR_NUMBER" --json state --jq .state)" = "MERGED"
     test -z "$(git status --porcelain)"
