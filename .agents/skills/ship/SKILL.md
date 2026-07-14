@@ -1,6 +1,6 @@
 ---
 name: ship
-description: "Publish a completed VerdigrisE change by validating the atomic diff, committing it, pushing a task branch, opening a ready pull request, requesting Codex review, and enabling automatic squash merge. Use when the user asks to ship, publish, or open and merge a pull request."
+description: "Publish a completed VerdigrisE change by validating the atomic diff, committing it, pushing a task branch, opening a ready pull request, requesting Codex review, enabling automatic squash merge, and proving the exact merge revision's post-merge checks. Use when the user asks to ship, publish, or open and merge a pull request."
 ---
 
 # Ship a change
@@ -54,12 +54,113 @@ description: "Publish a completed VerdigrisE change by validating the atomic dif
     ```
 
     Report any branch-protection, review, or check requirement that prevents auto-merge.
-13. Wait until GitHub reports the pull request as `MERGED`, then return the workspace to a clean, synchronized `main`. Delete only the obsolete local task branch after proving that it is the merged pull request's `codex/` head. Squash merging means the guarded local deletion requires `-D` because the task commit is not an ancestor of `main`:
+13. Wait until GitHub reports the pull request as `MERGED`, resolve its exact squash-merge revision, and require both the published GitHub `main` ref and `origin/main` to equal that revision:
 
     ```bash
     set -euo pipefail
     : "${PR_NUMBER:?set PR_NUMBER to the merged pull-request number}"
     test "$(gh pr view "$PR_NUMBER" --json state --jq .state)" = "MERGED"
+    test "$(gh pr view "$PR_NUMBER" --json baseRefName --jq .baseRefName)" = "main"
+    merge_sha=$(gh pr view "$PR_NUMBER" --json mergeCommit --jq '.mergeCommit.oid // empty')
+    test -n "$merge_sha"
+    test "$(gh api repos/{owner}/{repo}/git/ref/heads/main --jq .object.sha)" = "$merge_sha"
+    git fetch origin main
+    test "$(git rev-parse refs/remotes/origin/main)" = "$merge_sha"
+    ```
+
+    This equality is deliberately strict. If `main` advances before the delivery evidence is complete, stop and report the mismatch instead of substituting an ancestry check or silently attributing later evidence to this delivery.
+14. Wait for the exact merge SHA's applicable post-merge workflows. Require the `CI` push run and the default-setup `CodeQL` dynamic run. Also require the `Dependency submission` push run when the pull request changed any path configured to trigger `.github/workflows/dependency-submission.yml`. Workflow registration is asynchronous, so poll briefly for each expected run before treating it as missing:
+
+    ```bash
+    set -euo pipefail
+    : "${PR_NUMBER:?set PR_NUMBER to the merged pull-request number}"
+    : "${merge_sha:?resolve merge_sha from the merged pull request}"
+
+    needs_dependency_submission=$(
+      gh pr view "$PR_NUMBER" --json files --jq '
+        any(
+          .files[];
+          .path == "pyproject.toml"
+          or .path == "pylock.toml"
+          or .path == ".github/scripts/build_dependency_snapshot.py"
+          or .path == ".github/workflows/dependency-submission.yml"
+        )
+      '
+    )
+
+    wait_for_exact_run() {
+      local workflow=$1
+      local event=$2
+      local attempt=0
+      local run_id=
+
+      while [ "$attempt" -lt 60 ]; do
+        run_id=$(
+          gh run list \
+            --commit "$merge_sha" \
+            --branch main \
+            --workflow "$workflow" \
+            --event "$event" \
+            --limit 20 \
+            --json databaseId,headSha \
+            --jq 'map(select(.headSha == "'"$merge_sha"'")) | first | .databaseId // empty'
+        )
+        if [ -n "$run_id" ]; then
+          break
+        fi
+        attempt=$((attempt + 1))
+        sleep 5
+      done
+
+      if [ -z "$run_id" ]; then
+        printf 'No exact-SHA %s run appeared for %s\n' "$workflow" "$merge_sha" >&2
+        return 1
+      fi
+
+      if ! gh run watch "$run_id" --exit-status; then
+        gh run view "$run_id" --json workflowName,event,headSha,status,conclusion,url
+        return 1
+      fi
+      test "$(gh run view "$run_id" --json workflowName --jq .workflowName)" = "$workflow"
+      test "$(gh run view "$run_id" --json event --jq .event)" = "$event"
+      test "$(gh run view "$run_id" --json headSha --jq .headSha)" = "$merge_sha"
+      test "$(gh run view "$run_id" --json status --jq .status)" = "completed"
+      test "$(gh run view "$run_id" --json conclusion --jq .conclusion)" = "success"
+      gh run view "$run_id" --json workflowName,event,headSha,status,conclusion,url
+    }
+
+    wait_for_exact_run "CI" "push"
+    wait_for_exact_run "CodeQL" "dynamic"
+    if [ "$needs_dependency_submission" = "true" ]; then
+      wait_for_exact_run "Dependency submission" "push"
+    fi
+
+    free_check_count=$(
+      gh api "repos/{owner}/{repo}/commits/$merge_sha/check-runs?per_page=100" --jq '
+        [
+          .check_runs[]
+          | select(
+              .name == "Free deterministic validation"
+              and .status == "completed"
+              and .conclusion == "success"
+            )
+        ] | length
+      '
+    )
+    test "$free_check_count" -ge 1
+    test "$(gh api repos/{owner}/{repo}/git/ref/heads/main --jq .object.sha)" = "$merge_sha"
+    ```
+
+    A missing, skipped, cancelled, timed-out, or failed expected run is a delivery failure. Report its run URL when available and stop. Do not dispatch, rerun, or automatically fix a post-merge workflow without new maintainer approval.
+15. Only after the post-merge evidence passes, return the workspace to a clean, synchronized `main`. Delete only the obsolete local task branch after proving that it is the merged pull request's `codex/` head. Squash merging means the guarded local deletion requires `-D` because the task commit is not an ancestor of `main`:
+
+    ```bash
+    set -euo pipefail
+    : "${PR_NUMBER:?set PR_NUMBER to the merged pull-request number}"
+    test "$(gh pr view "$PR_NUMBER" --json state --jq .state)" = "MERGED"
+    merge_sha=$(gh pr view "$PR_NUMBER" --json mergeCommit --jq '.mergeCommit.oid // empty')
+    test -n "$merge_sha"
+    test "$(gh api repos/{owner}/{repo}/git/ref/heads/main --jq .object.sha)" = "$merge_sha"
     test -z "$(git status --porcelain)"
     task_branch=$(git branch --show-current)
     test "${task_branch#codex/}" != "$task_branch"
@@ -69,6 +170,7 @@ description: "Publish a completed VerdigrisE change by validating the atomic dif
     git fetch --prune origin
     git pull --ff-only origin main
     test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+    test "$(git rev-parse HEAD)" = "$merge_sha"
     test -z "$(git status --porcelain)"
     git branch -D "$task_branch"
     test -z "$(git branch --list "$task_branch")"
@@ -78,4 +180,4 @@ description: "Publish a completed VerdigrisE change by validating the atomic dif
     ```
 
     Never manually delete the remote task branch; allow the repository's automatic branch deletion to own that action, and let `git fetch --prune` remove the obsolete tracking reference. Never delete or modify an unrelated local or remote branch. Stop and report the mismatch instead of weakening any guard.
-14. Do not update issues, boards, labels, milestones, or releases.
+16. Do not update issues, boards, labels, milestones, or releases.
