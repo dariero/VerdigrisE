@@ -303,8 +303,11 @@ RagaliQ's native pytest plugin supplies `rag_tester`, `ClaudeJudge`, retrying tr
 ```
 ./VerdigrisE/
 ├── .github/
+│   ├── scripts/
+│   │   └── build_dependency_snapshot.py  # Exact-lock dependency submission
 │   └── workflows/
-│       └── ci.yml               # Locked, secret-free pull-request validation
+│       ├── ci.yml               # Locked, secret-free pull-request validation
+│       └── dependency-submission.yml  # Trusted-main vulnerability inventory
 ├── .pre-commit-config.yaml      # Ruff and repository-hygiene commit hooks
 ├── .python-version              # Canonical Python 3.14 interpreter line
 ├── .env.example                 # Provider-key placeholders only
@@ -320,6 +323,7 @@ RagaliQ's native pytest plugin supplies `rag_tester`, `ClaudeJudge`, retrying tr
     ├── __init__.py
     ├── conftest.py              # Flat-module import boundary
     ├── ragaliq_adapter.py       # Canned structural transport and case mapping
+    ├── test_dependency_submission.py  # Exact-lock snapshot contracts
     └── test_verdigrise.py       # Exact, provider-acceptance, and semantic tiers
 ```
 
@@ -339,6 +343,8 @@ Deterministic query tests construct `NumpyVectorIndex` in memory. Free integrity
 Ruff is the repository's formatter and linter. Mypy strictly checks the application modules and RagaliQ adapter. Pytest-cov measures branch coverage over the same application/adapter scope. The free baseline is 85.05%, enforced as a clean integer `fail_under = 81`; paid provider paths remain excluded. Pre-commit runs the static tools and repository-hygiene hooks before commits. Every hook uses `uv run --no-sync` and the hash-locked `.venv`; hook execution does not create separate environments or resolve additional packages. The sandbox still has no build backend, package-publication layer, or task runner. uv owns environment creation and exact dependency synchronization.
 
 GitHub Actions validates every ready pull request against its prospective merge result and validates `main` after each merge. CI installs the hash-locked Python 3.14 environment from a clean checkout, validates the pre-commit configuration, runs every repository hook, and runs the deterministic branch-coverage gate with OpenAI and RagaliQ paid markers explicitly excluded. Provider key variables are explicitly empty throughout the job, and the workflow does not reference provider secrets.
+
+The separate dependency-submission workflow runs only for trusted `main` revisions. It requires every declared project root to exist in the committed `pylock.toml`, then submits every exact locked PyPI package URL to GitHub's dependency graph so direct and transitive versions receive continuous Dependabot monitoring. The job has narrowly scoped `contents: write` permission because GitHub's dependency-submission API requires it; checkout credentials are not persisted and provider keys remain empty. The submission identifies declared project requirements as direct and every other locked package as indirect. uv's current PEP 751 export does not record parent-to-child dependency edges or transitive group provenance, so the workflow deliberately does not invent those details or introduce a duplicate `uv.lock`.
 
 Install the Git hook once per clone:
 
