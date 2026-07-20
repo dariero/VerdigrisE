@@ -47,7 +47,7 @@ uv pip sync --preview-features pylock --require-hashes pylock.toml
 uv pip check
 ```
 
-`pyproject.toml` is the abstract dependency authority: NumPy, OpenAI, and Pydantic are runtime dependencies; pytest, pytest-cov, and RagaliQ are test/evaluation dependencies; mypy, pre-commit, pre-commit-hooks, and Ruff are development tooling. The universal, hash-bearing `pylock.toml` records the exact cross-platform dependency contract. It was generated with uv 0.11.28 for Python 3.14, and installs the public `ragaliq==0.2.0` release rather than relying on an adjacent checkout.
+`pyproject.toml` is the abstract dependency authority: NumPy, OpenAI, and Pydantic are runtime dependencies; pytest, pytest-cov, and RagaliQ are test/evaluation dependencies; mypy, pre-commit, pre-commit-hooks, and Ruff are development tooling. The committed `uv.lock` preserves uv's solver decisions and dependency graph. The universal, hash-bearing `pylock.toml` is exported from that solver state and remains the exact cross-platform public-install contract. Both locks were generated with uv 0.11.28 for Python 3.14, and install the public `ragaliq==0.2.0` release rather than relying on an adjacent checkout.
 
 > **Platform support:** The command examples use POSIX shell syntax and paths. The free validation path is exercised locally on macOS and continuously on Ubuntu through GitHub Actions; native Windows command syntax and execution are not currently tested or claimed.
 
@@ -321,6 +321,7 @@ RagaliQ's native pytest plugin supplies `rag_tester`, `ClaudeJudge`, retrying tr
 ├── pipeline.py                  # Embed, index, retrieve, prompt, generate, and CLI
 ├── pylock.toml                  # Universal, hash-bearing exact environment
 ├── pyproject.toml               # Metadata, dependencies, pytest, and coverage policy
+├── uv.lock                      # Solver decisions and dependency graph
 └── eval/
     ├── __init__.py
     ├── conftest.py              # Flat-module import boundary
@@ -348,7 +349,7 @@ Ruff is the repository's formatter and linter. Mypy strictly checks the applicat
 
 GitHub Actions validates every ready pull request against its prospective merge result and validates `main` after each merge. CI installs the hash-locked Python 3.14 environment from a clean checkout, validates the pre-commit configuration, runs every repository hook, and runs the deterministic branch-coverage gate with OpenAI and RagaliQ paid markers explicitly excluded. Provider key variables are explicitly empty throughout the job, and the workflow does not reference provider secrets.
 
-The separate dependency-submission workflow runs only for trusted `main` revisions. It requires every declared project root to exist in the committed `pylock.toml`, then submits every exact locked PyPI package URL to GitHub's dependency graph so direct and transitive versions receive continuous Dependabot monitoring. The job has narrowly scoped `contents: write` permission because GitHub's dependency-submission API requires it; checkout credentials are not persisted and provider keys remain empty. The submission identifies declared project requirements as direct and every other locked package as indirect. uv's current PEP 751 export does not record parent-to-child dependency edges or transitive group provenance, so the workflow deliberately does not invent those details or introduce a duplicate `uv.lock`.
+The separate dependency-submission workflow runs only for trusted `main` revisions. It requires every declared project root to exist in the committed `pylock.toml`, then submits every exact locked PyPI package URL to GitHub's dependency graph so direct and transitive versions receive continuous Dependabot monitoring. The job has narrowly scoped `contents: write` permission because GitHub's dependency-submission API requires it; checkout credentials are not persisted and provider keys remain empty. The submission identifies declared project requirements as direct and every other locked package as indirect. uv's current PEP 751 export does not record parent-to-child dependency edges or transitive group provenance, so the workflow deliberately does not invent those details; the committed `uv.lock` preserves that graph for dependency maintenance without changing the standardized public-install and submission contract.
 
 Install the Git hook once per clone:
 
@@ -403,10 +404,14 @@ Run the same free suite with deterministic branch coverage over `config.py`, `co
 .venv/bin/python -m pytest --cov --cov-report=term-missing eval/ -q
 ```
 
-When dependency metadata changes, regenerate the standardized lock with the same Python policy:
+When dependency metadata changes, update the committed solver state and regenerate its standardized public-install export with the same Python policy:
 
 ```bash
-uv export \
+uvx --from uv==0.11.28 uv lock \
+  --python 3.14 \
+  --prerelease disallow
+uvx --from uv==0.11.28 uv export \
+  --frozen \
   --format pylock.toml \
   --all-groups \
   --no-emit-project \
@@ -414,10 +419,9 @@ uv export \
   --prerelease disallow \
   --no-header \
   -o pylock.toml
-rm uv.lock  # transient uv project lock; pylock.toml is the committed contract
 ```
 
-The project export path preserves the selected Python minor in `pylock.toml` as `==3.14.*`. Dependency changes must update `pyproject.toml` and `pylock.toml` together.
+The project export path preserves the selected Python minor in `pylock.toml` as `==3.14.*`. Change `pyproject.toml` when the abstract requirements change, and update `uv.lock` and `pylock.toml` together whenever solver state changes. CI requires `uv.lock` to satisfy `pyproject.toml` and its frozen export to match the committed `pylock.toml` byte for byte.
 
 Model and provider integration remains behind explicit paid markers. A failing all-golden paid test is an acceptance result for the configured model pair, not permission to weaken a fixture expectation.
 

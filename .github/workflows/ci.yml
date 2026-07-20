@@ -36,6 +36,21 @@ jobs:
           python-version: "3.14"
           enable-cache: false
 
+      - name: Verify dependency lock consistency
+        run: |
+          uv lock --check --python 3.14 --prerelease disallow
+          uv export \
+            --frozen \
+            --format pylock.toml \
+            --all-groups \
+            --no-emit-project \
+            --python 3.14 \
+            --prerelease disallow \
+            --no-header \
+            --quiet \
+            --output-file "$RUNNER_TEMP/pylock.generated.toml"
+          cmp pylock.toml "$RUNNER_TEMP/pylock.generated.toml"
+
       - name: Install the locked environment
         run: |
           uv venv --python 3.14
