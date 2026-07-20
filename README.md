@@ -305,11 +305,8 @@ RagaliQ's native pytest plugin supplies `rag_tester`, `ClaudeJudge`, retrying tr
 ```
 ./VerdigrisE/
 ├── .github/
-│   ├── scripts/
-│   │   └── build_dependency_snapshot.py  # Exact-lock dependency submission
 │   └── workflows/
-│       ├── ci.yml               # Locked, secret-free pull-request validation
-│       └── dependency-submission.yml  # Trusted-main vulnerability inventory
+│       └── ci.yml               # Locked, secret-free pull-request validation
 ├── .pre-commit-config.yaml      # Ruff and repository-hygiene commit hooks
 ├── .python-version              # Canonical Python 3.14 interpreter line
 ├── .env.example                 # Provider-key placeholders only
@@ -349,7 +346,7 @@ Ruff is the repository's formatter and linter. Mypy strictly checks the applicat
 
 GitHub Actions validates every ready pull request against its prospective merge result and validates `main` after each merge. CI installs the hash-locked Python 3.14 environment from a clean checkout, validates the pre-commit configuration, runs every repository hook, and runs the deterministic branch-coverage gate with OpenAI and RagaliQ paid markers explicitly excluded. Provider key variables are explicitly empty throughout the job, and the workflow does not reference provider secrets.
 
-The separate dependency-submission workflow runs only for trusted `main` revisions. It requires every declared project root to exist in the committed `pylock.toml`, then submits every exact locked PyPI package URL to GitHub's dependency graph so direct and transitive versions receive continuous Dependabot monitoring. The job has narrowly scoped `contents: write` permission because GitHub's dependency-submission API requires it; checkout credentials are not persisted and provider keys remain empty. The submission identifies declared project requirements as direct and every other locked package as indirect. uv's current PEP 751 export does not record parent-to-child dependency edges or transitive group provenance, so the workflow deliberately does not invent those details; the committed `uv.lock` preserves that graph for dependency maintenance without changing the standardized public-install and submission contract.
+GitHub natively ingests the committed `uv.lock` into the dependency graph, preserving exact versions and dependency relationships for Dependabot monitoring. CI independently requires `uv.lock` to satisfy `pyproject.toml` and requires its frozen export to match the committed `pylock.toml` byte for byte. The hash-bearing `pylock.toml` remains the public-install contract; it is not submitted as a second dependency inventory, so the graph has one full-fidelity lock authority and no repository workflow needs write permission for dependency submission.
 
 Install the Git hook once per clone:
 
