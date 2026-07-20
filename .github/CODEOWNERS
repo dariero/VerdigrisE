@@ -9,6 +9,7 @@
 /.pre-commit-config.yaml @dariero
 /.python-version @dariero
 /pyproject.toml @dariero
+/uv.lock @dariero
 /pylock.toml @dariero
 /config.py @dariero
 /models.py @dariero
