@@ -69,22 +69,16 @@ description: "Publish a completed VerdigrisE change by validating the atomic dif
     ```
 
     This equality is deliberately strict. If `main` advances before the delivery evidence is complete, stop and report the mismatch instead of substituting an ancestry check or silently attributing later evidence to this delivery.
-14. Wait for the exact merge SHA's applicable post-merge workflows. Require the `CI` push run and the default-setup `CodeQL` dynamic run. Also require the `Dependency submission` push run when the pull request changed any path configured to trigger `.github/workflows/dependency-submission.yml`. Workflow registration is asynchronous, so poll briefly for each expected run before treating it as missing:
+14. Wait for the exact merge SHA's applicable post-merge workflows. Require the `CI` push run and the default-setup `CodeQL` dynamic run. Also require the native `Dependency Graph` dynamic run when the pull request changed `uv.lock`. Workflow registration is asynchronous, so poll briefly for each expected run before treating it as missing:
 
     ```bash
     set -euo pipefail
     : "${PR_NUMBER:?set PR_NUMBER to the merged pull-request number}"
     : "${merge_sha:?resolve merge_sha from the merged pull request}"
 
-    needs_dependency_submission=$(
+    needs_dependency_graph=$(
       gh pr view "$PR_NUMBER" --json files --jq '
-        any(
-          .files[];
-          .path == "pyproject.toml"
-          or .path == "pylock.toml"
-          or .path == ".github/scripts/build_dependency_snapshot.py"
-          or .path == ".github/workflows/dependency-submission.yml"
-        )
+        any(.files[]; .path == "uv.lock")
       '
     )
 
@@ -131,8 +125,8 @@ description: "Publish a completed VerdigrisE change by validating the atomic dif
 
     wait_for_exact_run "CI" "push"
     wait_for_exact_run "CodeQL" "dynamic"
-    if [ "$needs_dependency_submission" = "true" ]; then
-      wait_for_exact_run "Dependency submission" "push"
+    if [ "$needs_dependency_graph" = "true" ]; then
+      wait_for_exact_run "Dependency Graph" "dynamic"
     fi
 
     free_check_count=$(
