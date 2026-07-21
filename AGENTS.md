@@ -5,7 +5,7 @@
 VerdigrisE is a public, local-first sandbox for inspectable RAG mechanics. Keep the corpus, vectors, retrieval order, prompt payload, answer, and evaluation record directly auditable.
 
 - Preserve the flat architecture: `corpus.py` owns the executable fixture, `models.py` owns capture contracts, `pipeline.py` owns the synchronous embed/index/retrieve/generate flow, and `eval/` owns verification.
-- Preserve explicit NumPy cosine retrieval, stable-id tie-breaking, top-2 context, citation metadata, verbatim prompt capture, validated index persistence, and exact abstention unless the task intentionally changes those contracts.
+- Preserve explicit NumPy cosine retrieval, stable-id tie-breaking, top-2 context, citation metadata, verbatim prompt capture, validated transactional index generations, and exact abstention unless the task intentionally changes those contracts.
 - Deterministic pytest owns ids, rank, collision materialization, values, units, qualifiers, citations, prompt bytes, distance math, provider mappings, and exact abstention. RagaliQ owns only faithfulness and answer relevance after those exact checks pass.
 - Do not introduce document ingestion, a vector database, reranking, services, packaging, or other production layers as incidental changes.
 - Treat executable source, tests, and configuration as more authoritative than comments or prose. Resolve conflicts and update stale documentation instead of copying it here.
@@ -53,7 +53,7 @@ Any command that can contact OpenAI or Anthropic requires explicit approval for 
 
 Report only actionable issues introduced by the pull request, with the affected path and concrete consequence. Prioritize correctness, safety, compatibility, reproducibility, and regression risk; omit style-only findings already clear from local conventions.
 
-- Check retrieval rank, stable-id tie-breaking, distance calculation, citations, prompt bytes, index schema and fingerprints, per-file atomic replacement, fail-closed validation of a stable persisted pair, generation parsing, and `RagRecord` alignment for unintended behavior changes. Do not claim crash transactionality or concurrent reader/writer safety; the current implementation has no durability sync, locking, rollback, or versioned-generation switch.
+- Check retrieval rank, stable-id tie-breaking, distance calculation, citations, prompt bytes, index schema and fingerprints, writer-unique staging, file and directory synchronization, atomic generation publication and active-pointer replacement, path-confined pointer validation, immutable single-generation loading, generation parsing, and `RagRecord` alignment for unintended behavior changes. Readers must see a complete old or new generation, and concurrent writers must not mix files. Do not claim serialized writer ordering, automatic cleanup or rollback, network-filesystem guarantees, or durable generation provenance in `RagRecord`; completed inactive and crash-orphaned generations can remain.
 - Reject transfers of exact facts, units, qualifiers, ordering, citations, or abstention from deterministic pytest to probabilistic RagaliQ judging.
 - Flag any path that could execute OpenAI or Anthropic calls without an explicit paid marker and per-run approval.
 - Require `pyproject.toml`, `uv.lock`, and `pylock.toml` consistency, a byte-identical frozen export, hashes, Python `==3.14.*` resolution, and published-package provenance; flag unexplained lock churn.

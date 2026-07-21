@@ -16,7 +16,9 @@ import argparse
 import hashlib
 import json
 import os
+import uuid
 from collections.abc import Sequence
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, Protocol, TypedDict, cast
 
@@ -30,8 +32,11 @@ from config import (
     EMBEDDING_MODEL,
     GENERATION_MODEL,
     GENERATION_TEMPERATURE,
+    INDEX_ACTIVE_FILENAME,
     INDEX_DIRECTORY,
+    INDEX_GENERATIONS_DIRECTORY,
     INDEX_MANIFEST_FILENAME,
+    INDEX_POINTER_SCHEMA_VERSION,
     INDEX_SCHEMA_VERSION,
     INDEX_VECTOR_FILENAME,
     TIE_BREAK_RULE,
@@ -265,6 +270,49 @@ class NumpyVectorIndex:
                 digest.update(block)
         return digest.hexdigest()
 
+    @staticmethod
+    def _fsync_file(path: Path) -> None:
+        with path.open("rb+") as handle:
+            os.fsync(handle.fileno())
+
+    @staticmethod
+    def _fsync_directory(directory: Path) -> None:
+        descriptor = os.open(directory, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+    @classmethod
+    def _ensure_directory(cls, directory: Path) -> None:
+        missing_directories: list[Path] = []
+        current = directory
+        while not current.exists():
+            if current.is_symlink():
+                raise ValueError(f"Index storage directory must not be a symbolic link: {current}")
+            missing_directories.append(current)
+            current = current.parent
+        if current.is_symlink():
+            raise ValueError(f"Index storage directory must not be a symbolic link: {current}")
+
+        directory.mkdir(parents=True, exist_ok=True)
+        if directory.is_symlink() or not directory.is_dir():
+            raise ValueError(f"Index storage path must be a real directory: {directory}")
+        for created_directory in missing_directories:
+            cls._fsync_directory(created_directory.parent)
+
+    @staticmethod
+    def _validate_generation_id(value: object) -> str:
+        if (
+            not isinstance(value, str)
+            or len(value) != 32
+            or any(character not in "0123456789abcdef" for character in value)
+        ):
+            raise ValueError(
+                "Active index generation id must be 32 lowercase hexadecimal characters"
+            )
+        return value
+
     @classmethod
     def corpus_sha256(cls, entries: Sequence[CorpusEntry]) -> str:
         """Fingerprint ordered ids, verbatim text, and all retrieval metadata."""
@@ -353,18 +401,24 @@ class NumpyVectorIndex:
         return results
 
     def save(self, directory: Path) -> None:
-        """Persist normalized rows and an inspectable metadata manifest."""
+        """Publish one immutable generation, then atomically make it active."""
 
         if not self._entries:
             raise RuntimeError("Cannot save an empty index")
         self._validate_unit_rows(self._vectors)
-        directory.mkdir(parents=True, exist_ok=True)
-        vector_path = directory / INDEX_VECTOR_FILENAME
-        manifest_path = directory / INDEX_MANIFEST_FILENAME
-        temporary_vector_path = directory / f".{INDEX_VECTOR_FILENAME}.tmp.npy"
-        temporary_manifest_path = directory / f".{INDEX_MANIFEST_FILENAME}.tmp"
+        self._ensure_directory(directory)
+        generations_directory = directory / INDEX_GENERATIONS_DIRECTORY
+        self._ensure_directory(generations_directory)
+        generation_id = uuid.uuid4().hex
+        staging_directory = generations_directory / f".{generation_id}.tmp"
+        generation_directory = generations_directory / generation_id
+        staging_directory.mkdir()
+        vector_path = staging_directory / INDEX_VECTOR_FILENAME
+        manifest_path = staging_directory / INDEX_MANIFEST_FILENAME
+        active_path = directory / INDEX_ACTIVE_FILENAME
+        temporary_active_path = directory / f".{INDEX_ACTIVE_FILENAME}.{generation_id}.tmp"
         try:
-            np.save(temporary_vector_path, self._vectors, allow_pickle=False)
+            np.save(vector_path, self._vectors, allow_pickle=False)
             manifest = {
                 "schema_version": INDEX_SCHEMA_VERSION,
                 "embedding_model": self.embedding_model,
@@ -372,29 +426,91 @@ class NumpyVectorIndex:
                 "distance_definition": DISTANCE_DEFINITION,
                 "tie_break_rule": TIE_BREAK_RULE,
                 "corpus_sha256": self.indexed_corpus_sha256,
-                "vectors_sha256": self._file_sha256(temporary_vector_path),
+                "vectors_sha256": self._file_sha256(vector_path),
                 "entries": self._entries,
             }
-            temporary_manifest_path.write_text(
+            manifest_path.write_text(
                 json.dumps(manifest, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
-            os.replace(temporary_vector_path, vector_path)
-            os.replace(temporary_manifest_path, manifest_path)
+            self._fsync_file(vector_path)
+            self._fsync_file(manifest_path)
+            self._fsync_directory(staging_directory)
+            os.replace(staging_directory, generation_directory)
+            self._fsync_directory(generations_directory)
+
+            active_pointer = {
+                "generation_id": generation_id,
+                "schema_version": INDEX_POINTER_SCHEMA_VERSION,
+            }
+            temporary_active_path.write_text(
+                json.dumps(active_pointer, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            self._fsync_file(temporary_active_path)
+            os.replace(temporary_active_path, active_path)
+            self._fsync_directory(directory)
         finally:
-            temporary_vector_path.unlink(missing_ok=True)
-            temporary_manifest_path.unlink(missing_ok=True)
+            with suppress(OSError):
+                temporary_active_path.unlink(missing_ok=True)
+            with suppress(OSError):
+                vector_path.unlink(missing_ok=True)
+            with suppress(OSError):
+                manifest_path.unlink(missing_ok=True)
+            with suppress(OSError):
+                staging_directory.rmdir()
+
+    @classmethod
+    def _resolve_index_files(cls, directory: Path) -> tuple[Path, Path]:
+        active_path = directory / INDEX_ACTIVE_FILENAME
+        if active_path.is_symlink():
+            raise ValueError("Active index pointer must not be a symbolic link")
+        if active_path.exists():
+            if not active_path.is_file():
+                raise ValueError("Active index pointer must be a regular file")
+            raw_pointer = json.loads(active_path.read_text(encoding="utf-8"))
+            if not isinstance(raw_pointer, dict):
+                raise ValueError("Active index pointer must be a JSON object")
+            pointer = cast(dict[str, object], raw_pointer)
+            pointer_schema_version = pointer.get("schema_version")
+            if (
+                isinstance(pointer_schema_version, bool)
+                or not isinstance(pointer_schema_version, int)
+                or pointer_schema_version != INDEX_POINTER_SCHEMA_VERSION
+            ):
+                raise ValueError("Unsupported active index pointer schema version")
+            generation_id = cls._validate_generation_id(pointer.get("generation_id"))
+            generations_directory = directory / INDEX_GENERATIONS_DIRECTORY
+            generation_directory = generations_directory / generation_id
+            manifest_path = generation_directory / INDEX_MANIFEST_FILENAME
+            vector_path = generation_directory / INDEX_VECTOR_FILENAME
+            if generations_directory.is_symlink() or generation_directory.is_symlink():
+                raise ValueError("Active index generation path must not be a symbolic link")
+            if manifest_path.is_symlink() or vector_path.is_symlink():
+                raise ValueError("Active index generation files must not be symbolic links")
+            if (
+                not generation_directory.is_dir()
+                or not manifest_path.is_file()
+                or not vector_path.is_file()
+            ):
+                raise FileNotFoundError(
+                    f"Active index generation {generation_id} is incomplete at {directory}"
+                )
+            return manifest_path, vector_path
+
+        legacy_manifest_path = directory / INDEX_MANIFEST_FILENAME
+        legacy_vector_path = directory / INDEX_VECTOR_FILENAME
+        if legacy_manifest_path.is_symlink() or legacy_vector_path.is_symlink():
+            raise ValueError("Legacy index files must not be symbolic links")
+        if legacy_manifest_path.is_file() and legacy_vector_path.is_file():
+            return legacy_manifest_path, legacy_vector_path
+        raise FileNotFoundError(f"No complete index at {directory}. Run: python pipeline.py ingest")
 
     @classmethod
     def load(cls, directory: Path) -> NumpyVectorIndex:
-        """Load a previously ingested index and validate row alignment."""
+        """Resolve one active immutable generation and validate row alignment."""
 
-        manifest_path = directory / INDEX_MANIFEST_FILENAME
-        vector_path = directory / INDEX_VECTOR_FILENAME
-        if not manifest_path.exists() or not vector_path.exists():
-            raise FileNotFoundError(
-                f"No complete index at {directory}. Run: python pipeline.py ingest"
-            )
+        manifest_path, vector_path = cls._resolve_index_files(directory)
 
         raw_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if not isinstance(raw_manifest, dict):
