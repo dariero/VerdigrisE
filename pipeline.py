@@ -462,6 +462,8 @@ class NumpyVectorIndex:
 
     @classmethod
     def _resolve_index_files(cls, directory: Path) -> tuple[Path, Path]:
+        if directory.is_symlink():
+            raise ValueError(f"Index storage directory must not be a symbolic link: {directory}")
         active_path = directory / INDEX_ACTIVE_FILENAME
         if active_path.is_symlink():
             raise ValueError("Active index pointer must not be a symbolic link")

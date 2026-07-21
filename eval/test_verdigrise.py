@@ -785,6 +785,17 @@ def test_dangling_active_symlink_never_falls_back_to_a_legacy_pair(tmp_path: Pat
         NumpyVectorIndex.load(tmp_path)
 
 
+def test_index_load_rejects_a_symlinked_storage_directory(tmp_path: Path) -> None:
+    source_directory = tmp_path / "source"
+    symlinked_directory = tmp_path / "symlinked"
+    index = _two_entry_index([[1.0, 0.0], [0.0, 1.0]])
+    index.save(source_directory)
+    symlinked_directory.symlink_to(source_directory, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="storage directory.*symbolic link"):
+        NumpyVectorIndex.load(symlinked_directory)
+
+
 def test_active_generation_directory_symlink_is_rejected(tmp_path: Path) -> None:
     source_directory = tmp_path / "source"
     target_directory = tmp_path / "target"
