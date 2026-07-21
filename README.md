@@ -27,7 +27,7 @@ Production retrieval systems can hide source attribution errors behind fluent, g
 | **Executable Grimoire Fixture** | Keeps eight short corpus entries and seven golden cases together in Python | Source facts and expected failures remain directly inspectable |
 | **Adversarial Retrieval Traps** | Exercises source-scoped numbers, near-synonyms, qualifiers, and genuine absence | Plausible wrong-source answers become detectable failures |
 | **Explicit NumPy Retrieval** | Shows normalization, cosine similarity, distance, top-2 ranking, and tie-breaking | Vector mechanics remain visible without a database abstraction |
-| **Validated Persistence** | Stores normalized `float32` rows and an inspectable manifest with corpus and vector fingerprints | Loading rejects incomplete files, invalid schema or policy fields, malformed entries, fingerprint mismatches, row misalignment, non-`float32` vectors, and rows outside the documented unit-norm tolerance; the configured query path also rejects indexes stale relative to `corpus.py` or the configured embedding model |
+| **Transactional Persistence** | Publishes each normalized `float32` matrix and fingerprinted manifest as an immutable generation, then atomically switches one active pointer | Readers resolve either the complete old or complete new generation during a save; validation still rejects malformed, mismatched, stale, or numerically invalid state |
 | **Exact Prompt Capture** | Preserves verbatim retrieved text, citation labels, request messages, and answer text | Every generation input is available for deterministic assertions and audit review |
 | **Deterministic-First Tests** | Uses fixed vectors, fixed answers, fake provider endpoints, and exact assertions by default | Local regression behavior does not depend on API availability or judge variance |
 | **All-Golden Provider Acceptance** | Runs every golden case through real OpenAI embeddings and generation when explicitly selected | The configured providers are checked without weakening the free default suite |
@@ -89,7 +89,7 @@ Run it from the repository root after paid ingestion:
   'from pipeline import ask; print(ask("What quantity of pearl salt and which vapor are specified for ground moonpetal?").model_dump_json(indent=2))'
 ```
 
-> **Lifecycle:** `ask()` loads `.index/`, rejects an index stale relative to the fixture or configured embedding model before provider initialization, embeds the question separately, retrieves top-2, generates once, and returns a `RagRecord`. It makes paid OpenAI calls.
+> **Lifecycle:** `ask()` resolves one active generation under `.index/`, rejects an index stale relative to the fixture or configured embedding model before provider initialization, embeds the question separately, retrieves top-2, generates once, and returns a `RagRecord`. It makes paid OpenAI calls.
 
 ### Pytest Integration
 
@@ -104,7 +104,7 @@ The native pytest configuration in `pyproject.toml` strictly registers markers a
 ### CLI
 
 ```bash
-# Paid: batch-embed the corpus and persist the validated index
+# Paid: batch-embed the corpus, persist a generation, and atomically activate it
 .venv/bin/python pipeline.py ingest --debug
 
 # Paid: embed one query, retrieve top-2, and generate one answer
@@ -334,15 +334,26 @@ The four pipeline stages are:
 3. Build the exact citation-labelled context and generation messages.
 4. Generate without rewriting the response and capture every stage in `RagRecord`.
 
-Deterministic query tests construct `NumpyVectorIndex` in memory. Free integrity tests also run ingestion, persist and reload the index, and prove that wrong-dtype, non-finite, zero, non-unit, fingerprint-mismatched, fixture-stale, and configured-model-stale state is rejected before provider initialization. Persisted rows must already use the `float32` dtype and have unit length within an absolute `1e-5` tolerance; loading validates the fingerprinted representation directly instead of casting or renormalizing it. CLI `ingest` persists the index under `.index/`; CLI `ask` reloads and validates it.
+Deterministic query tests construct `NumpyVectorIndex` in memory. Free integrity tests also run ingestion, persist and reload the index, and prove that wrong-dtype, non-finite, zero, non-unit, fingerprint-mismatched, fixture-stale, and configured-model-stale state is rejected before provider initialization. Persisted rows must already use the `float32` dtype and have unit length within an absolute `1e-5` tolerance; loading validates the fingerprinted representation directly instead of casting or renormalizing it. CLI `ingest` publishes under `.index/`; CLI `ask` resolves and validates the active generation.
 
-`save()` stages both index files beside their destinations and uses `os.replace` for each destination separately, so replacement is atomic per file rather than across the pair. For a pair that remains unchanged while `load()` reads it, requiring both files plus manifest fingerprints and structural checks makes incomplete or mismatched state fail closed. The pair is not crash-transactional and concurrent access is unsupported: there is no durability sync, locking, rollback, or versioned-generation switch.
+```text
+.index/
+├── active.json
+└── generations/
+    └── <32-character-generation-id>/
+        ├── manifest.json
+        └── vectors.npy
+```
+
+`save()` writes and synchronizes both files inside a writer-unique hidden staging directory, synchronizes the directory, atomically publishes it as an immutable generation, and synchronizes `generations/`. It then writes and synchronizes a writer-unique temporary pointer, replaces `active.json` once with `os.replace`, and synchronizes the index directory. `load()` reads that pointer once and validates only the selected immutable generation. On supported local macOS and Ubuntu filesystems, an interruption before the pointer switch leaves the previous generation active; a concurrent reader therefore sees a complete old or new generation rather than a mixed pair. Concurrent writers use disjoint paths, and the last completed pointer switch determines the active generation.
+
+For compatibility, `load()` also accepts the previous root-level `manifest.json` plus `vectors.npy` layout only when `active.json` is absent. New saves never mutate that legacy pair, and any present active pointer is authoritative and fail-closed. Completed inactive generations are retained so readers that already selected them remain safe. This sandbox does not serialize writer order, compare and swap revisions, prune retained or crash-orphaned generations, roll back after activation, guarantee network-filesystem behavior, or bind a generation id into durable `RagRecord` replay provenance.
 
 ---
 
 ## Development
 
-Ruff is the repository's formatter and linter. Mypy strictly checks the application modules and RagaliQ adapter. Pytest-cov measures branch coverage over the same application/adapter scope. The free baseline is 85.95%, enforced as a clean integer `fail_under = 81`; paid provider paths remain excluded. Pre-commit runs the static tools and repository-hygiene hooks before commits. Every hook uses `uv run --no-sync` and the hash-locked `.venv`; hook execution does not create separate environments or resolve additional packages. The sandbox still has no build backend, package-publication layer, or task runner. uv owns environment creation and exact dependency synchronization.
+Ruff is the repository's formatter and linter. Mypy strictly checks the application modules and RagaliQ adapter. Pytest-cov measures branch coverage over the same application/adapter scope. The free baseline is 87.22%, enforced as a clean integer `fail_under = 81`; paid provider paths remain excluded. Pre-commit runs the static tools and repository-hygiene hooks before commits. Every hook uses `uv run --no-sync` and the hash-locked `.venv`; hook execution does not create separate environments or resolve additional packages. The sandbox still has no build backend, package-publication layer, or task runner. uv owns environment creation and exact dependency synchronization.
 
 GitHub Actions validates every ready pull request against its prospective merge result and validates `main` after each merge. CI installs the hash-locked Python 3.14 environment from a clean checkout, validates the pre-commit configuration, runs every repository hook, and runs the deterministic branch-coverage gate with OpenAI and RagaliQ paid markers explicitly excluded. Provider key variables are explicitly empty throughout the job, and the workflow does not reference provider secrets.
 
@@ -440,7 +451,7 @@ Model and provider integration remains behind explicit paid markers. A failing a
 | Setup overhead | Medium | Medium, including a native binary | Low |
 | Dependency weight | High for this fixture | Higher than NumPy alone | Lowest |
 | Metadata support | Native | Separate sidecar required | Explicit dictionaries and JSON |
-| Persistence | Native | Vector index serialization | Explicit `.npy` plus manifest |
+| Persistence | Native | Vector index serialization | Immutable `.npy`-plus-manifest generations with an active pointer |
 | Distance transparency | Backend configuration mediates semantics | Normalization and metric choice remain external | Normalization, dot product, distance, and tie-break are visible |
 | Teaching value | Database lifecycle | ANN index mechanics | Complete small-corpus data flow |
 | Later replacement | Collection adapter | Index plus metadata adapter | Existing provider/index/result seams |
@@ -461,7 +472,7 @@ rank = descending bounded similarity, then ascending stable chunk id
 The next rungs are intentionally visible but not implemented:
 
 1. Replace hand-authored strings with table-aware and clause-aware ingestion while retaining stable source spans and version lineage.
-2. Version corpus snapshots and indexes so answers and evaluations can be replayed against an exact source edition.
+2. Bind answers and evaluations to an exact index generation and retain durable provenance for replay across source editions.
 3. Add lexical retrieval, metadata filters, hybrid fusion, and reranking behind the current retrieval-result boundary.
 4. Enforce project, document, clause, table, row, or cell access policy before evidence reaches the prompt.
 5. Add claim-to-evidence validation, source-span citations, and durable answer audit events.

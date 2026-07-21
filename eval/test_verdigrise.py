@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier, Event
 from types import SimpleNamespace
 from typing import Any
 
@@ -28,7 +30,10 @@ from config import (
     EMBEDDING_MODEL,
     GENERATION_MODEL,
     GENERATION_TEMPERATURE,
+    INDEX_ACTIVE_FILENAME,
+    INDEX_GENERATIONS_DIRECTORY,
     INDEX_MANIFEST_FILENAME,
+    INDEX_POINTER_SCHEMA_VERSION,
     INDEX_SCHEMA_VERSION,
     INDEX_VECTOR_FILENAME,
     TIE_BREAK_RULE,
@@ -153,26 +158,71 @@ def _persist_fixed_index(
     return embedder, index
 
 
+def _read_active_pointer(directory: Path) -> dict[str, Any]:
+    pointer = json.loads((directory / INDEX_ACTIVE_FILENAME).read_text(encoding="utf-8"))
+    assert isinstance(pointer, dict)
+    return pointer
+
+
+def _active_generation_directory(directory: Path) -> Path:
+    generation_id = _read_active_pointer(directory)["generation_id"]
+    assert isinstance(generation_id, str)
+    return directory / INDEX_GENERATIONS_DIRECTORY / generation_id
+
+
+def _index_file_path(directory: Path, filename: str) -> Path:
+    return _active_generation_directory(directory) / filename
+
+
 def _read_manifest(directory: Path) -> dict[str, Any]:
-    manifest = json.loads((directory / INDEX_MANIFEST_FILENAME).read_text(encoding="utf-8"))
+    manifest = json.loads(
+        _index_file_path(directory, INDEX_MANIFEST_FILENAME).read_text(encoding="utf-8")
+    )
     assert isinstance(manifest, dict)
     return manifest
 
 
 def _write_manifest(directory: Path, manifest: object) -> None:
-    (directory / INDEX_MANIFEST_FILENAME).write_text(
+    _index_file_path(directory, INDEX_MANIFEST_FILENAME).write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
 
 
 def _rewrite_vectors(directory: Path, vectors: np.ndarray, *, update_digest: bool) -> None:
-    vector_path = directory / INDEX_VECTOR_FILENAME
+    vector_path = _index_file_path(directory, INDEX_VECTOR_FILENAME)
     np.save(vector_path, vectors, allow_pickle=False)
     if update_digest:
         manifest = _read_manifest(directory)
         manifest["vectors_sha256"] = hashlib.sha256(vector_path.read_bytes()).hexdigest()
         _write_manifest(directory, manifest)
+
+
+def _write_active_pointer(directory: Path, pointer: object) -> None:
+    (directory / INDEX_ACTIVE_FILENAME).write_text(
+        json.dumps(pointer, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _generation_directories(directory: Path) -> list[Path]:
+    generations_directory = directory / INDEX_GENERATIONS_DIRECTORY
+    return sorted(
+        path
+        for path in generations_directory.iterdir()
+        if path.is_dir() and not path.name.startswith(".")
+    )
+
+
+def _two_entry_index(vectors: list[list[float]]) -> NumpyVectorIndex:
+    index = NumpyVectorIndex(dimension=2, embedding_model=EMBEDDING_MODEL)
+    index.index(CORPUS[:2], np.asarray(vectors, dtype=np.float32))
+    return index
+
+
+def _first_hit_id(directory: Path) -> str:
+    loaded = NumpyVectorIndex.load(directory)
+    return loaded.search(np.asarray([1.0, 0.0], dtype=np.float32), top_k=1)[0].id
 
 
 class _MatrixEmbeddingProvider:
@@ -546,8 +596,16 @@ def test_unpaid_ingest_persists_a_reloadable_current_index(tmp_path: Path) -> No
             True,
         )
     ]
-    assert (tmp_path / INDEX_MANIFEST_FILENAME).is_file()
-    assert (tmp_path / INDEX_VECTOR_FILENAME).is_file()
+    active_pointer = _read_active_pointer(tmp_path)
+    assert active_pointer["schema_version"] == INDEX_POINTER_SCHEMA_VERSION
+    generation_id = active_pointer["generation_id"]
+    assert isinstance(generation_id, str)
+    assert len(generation_id) == 32
+    assert set(generation_id) <= set("0123456789abcdef")
+    assert _index_file_path(tmp_path, INDEX_MANIFEST_FILENAME).is_file()
+    assert _index_file_path(tmp_path, INDEX_VECTOR_FILENAME).is_file()
+    assert not (tmp_path / INDEX_MANIFEST_FILENAME).exists()
+    assert not (tmp_path / INDEX_VECTOR_FILENAME).exists()
     assert index.embedding_model == EMBEDDING_MODEL
     assert index.dimension == len(next(iter(_CORPUS_VECTORS.values())))
     assert index.indexed_corpus_sha256 == NumpyVectorIndex.corpus_sha256(CORPUS)
@@ -560,7 +618,7 @@ def test_unpaid_ingest_persists_a_reloadable_current_index(tmp_path: Path) -> No
     assert manifest["tie_break_rule"] == TIE_BREAK_RULE
     assert manifest["corpus_sha256"] == index.indexed_corpus_sha256
 
-    vector_path = tmp_path / INDEX_VECTOR_FILENAME
+    vector_path = _index_file_path(tmp_path, INDEX_VECTOR_FILENAME)
     persisted_vectors = np.load(vector_path, allow_pickle=False)
     assert persisted_vectors.dtype == np.dtype(np.float32)
     np.testing.assert_allclose(
@@ -573,7 +631,10 @@ def test_unpaid_ingest_persists_a_reloadable_current_index(tmp_path: Path) -> No
     loaded = NumpyVectorIndex.load(tmp_path)
     roundtrip_directory = tmp_path / "roundtrip"
     loaded.save(roundtrip_directory)
-    assert (roundtrip_directory / INDEX_VECTOR_FILENAME).read_bytes() == vector_path.read_bytes()
+    assert (
+        _index_file_path(roundtrip_directory, INDEX_VECTOR_FILENAME).read_bytes()
+        == vector_path.read_bytes()
+    )
     case = GOLDEN_BY_ID["numeric-source-verdigris-dose"]
     hits = loaded.search(np.asarray(_QUESTION_VECTORS[case.question], dtype=np.float32))
     assert [hit.id for hit in hits] == case.expected_ranked_ids
@@ -582,13 +643,498 @@ def test_unpaid_ingest_persists_a_reloadable_current_index(tmp_path: Path) -> No
     assert hits[0].metadata["condition"] == ("distilled in copper and administered after dusk")
 
 
+def test_repeated_save_retains_old_generation_and_activates_new_generation(
+    tmp_path: Path,
+) -> None:
+    old_index = _two_entry_index([[1.0, 0.0], [0.0, 1.0]])
+    new_index = _two_entry_index([[0.0, 1.0], [1.0, 0.0]])
+    old_index.save(tmp_path)
+    old_generation = _active_generation_directory(tmp_path)
+
+    new_index.save(tmp_path)
+    new_generation = _active_generation_directory(tmp_path)
+
+    assert new_generation != old_generation
+    assert _generation_directories(tmp_path) == sorted([old_generation, new_generation])
+    assert _first_hit_id(old_generation) == CORPUS[0]["id"]
+    assert _first_hit_id(tmp_path) == CORPUS[1]["id"]
+
+
+def test_legacy_schema_v1_pair_loads_until_a_generation_is_activated(tmp_path: Path) -> None:
+    source_directory = tmp_path / "source"
+    legacy_directory = tmp_path / "legacy"
+    legacy_directory.mkdir()
+    old_index = _two_entry_index([[1.0, 0.0], [0.0, 1.0]])
+    new_index = _two_entry_index([[0.0, 1.0], [1.0, 0.0]])
+    old_index.save(source_directory)
+    source_generation = _active_generation_directory(source_directory)
+    legacy_manifest_path = legacy_directory / INDEX_MANIFEST_FILENAME
+    legacy_vector_path = legacy_directory / INDEX_VECTOR_FILENAME
+    legacy_manifest_path.write_bytes((source_generation / INDEX_MANIFEST_FILENAME).read_bytes())
+    legacy_vector_path.write_bytes((source_generation / INDEX_VECTOR_FILENAME).read_bytes())
+    legacy_manifest_bytes = legacy_manifest_path.read_bytes()
+    legacy_vector_bytes = legacy_vector_path.read_bytes()
+
+    assert _first_hit_id(legacy_directory) == CORPUS[0]["id"]
+
+    new_index.save(legacy_directory)
+
+    assert legacy_manifest_path.read_bytes() == legacy_manifest_bytes
+    assert legacy_vector_path.read_bytes() == legacy_vector_bytes
+    assert _first_hit_id(legacy_directory) == CORPUS[1]["id"]
+
+
+@pytest.mark.parametrize(
+    ("pointer", "message"),
+    [
+        pytest.param([], "JSON object", id="non-object"),
+        pytest.param(
+            {"schema_version": True, "generation_id": "0" * 32},
+            "pointer schema version",
+            id="boolean-schema",
+        ),
+        pytest.param(
+            {"schema_version": 1.0, "generation_id": "0" * 32},
+            "pointer schema version",
+            id="float-schema",
+        ),
+        pytest.param(
+            {
+                "schema_version": INDEX_POINTER_SCHEMA_VERSION + 1,
+                "generation_id": "0" * 32,
+            },
+            "pointer schema version",
+            id="unsupported-schema",
+        ),
+        pytest.param(
+            {"schema_version": INDEX_POINTER_SCHEMA_VERSION},
+            "generation id",
+            id="missing-generation",
+        ),
+        pytest.param(
+            {
+                "schema_version": INDEX_POINTER_SCHEMA_VERSION,
+                "generation_id": "../outside",
+            },
+            "generation id",
+            id="traversal-generation",
+        ),
+        pytest.param(
+            {
+                "schema_version": INDEX_POINTER_SCHEMA_VERSION,
+                "generation_id": "A" * 32,
+            },
+            "generation id",
+            id="uppercase-generation",
+        ),
+    ],
+)
+def test_index_load_rejects_an_invalid_active_pointer(
+    tmp_path: Path, pointer: object, message: str
+) -> None:
+    _write_active_pointer(tmp_path, pointer)
+
+    with pytest.raises(ValueError, match=message):
+        NumpyVectorIndex.load(tmp_path)
+
+
+def test_index_load_rejects_a_missing_active_generation(tmp_path: Path) -> None:
+    _write_active_pointer(
+        tmp_path,
+        {
+            "schema_version": INDEX_POINTER_SCHEMA_VERSION,
+            "generation_id": "0" * 32,
+        },
+    )
+
+    with pytest.raises(FileNotFoundError, match="Active index generation"):
+        NumpyVectorIndex.load(tmp_path)
+
+
+def test_invalid_active_pointer_never_falls_back_to_a_legacy_pair(tmp_path: Path) -> None:
+    source_directory = tmp_path / "source"
+    index = _two_entry_index([[1.0, 0.0], [0.0, 1.0]])
+    index.save(source_directory)
+    source_generation = _active_generation_directory(source_directory)
+    (tmp_path / INDEX_MANIFEST_FILENAME).write_bytes(
+        (source_generation / INDEX_MANIFEST_FILENAME).read_bytes()
+    )
+    (tmp_path / INDEX_VECTOR_FILENAME).write_bytes(
+        (source_generation / INDEX_VECTOR_FILENAME).read_bytes()
+    )
+    _write_active_pointer(tmp_path, [])
+
+    with pytest.raises(ValueError, match="JSON object"):
+        NumpyVectorIndex.load(tmp_path)
+
+
+def test_dangling_active_symlink_never_falls_back_to_a_legacy_pair(tmp_path: Path) -> None:
+    source_directory = tmp_path / "source"
+    index = _two_entry_index([[1.0, 0.0], [0.0, 1.0]])
+    index.save(source_directory)
+    source_generation = _active_generation_directory(source_directory)
+    (tmp_path / INDEX_MANIFEST_FILENAME).write_bytes(
+        (source_generation / INDEX_MANIFEST_FILENAME).read_bytes()
+    )
+    (tmp_path / INDEX_VECTOR_FILENAME).write_bytes(
+        (source_generation / INDEX_VECTOR_FILENAME).read_bytes()
+    )
+    (tmp_path / INDEX_ACTIVE_FILENAME).symlink_to(tmp_path / "missing-active.json")
+
+    with pytest.raises(ValueError, match="symbolic link"):
+        NumpyVectorIndex.load(tmp_path)
+
+
+def test_index_load_rejects_a_symlinked_storage_directory(tmp_path: Path) -> None:
+    source_directory = tmp_path / "source"
+    symlinked_directory = tmp_path / "symlinked"
+    index = _two_entry_index([[1.0, 0.0], [0.0, 1.0]])
+    index.save(source_directory)
+    symlinked_directory.symlink_to(source_directory, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="storage directory.*symbolic link"):
+        NumpyVectorIndex.load(symlinked_directory)
+
+
+def test_active_generation_directory_symlink_is_rejected(tmp_path: Path) -> None:
+    source_directory = tmp_path / "source"
+    target_directory = tmp_path / "target"
+    generation_id = "0" * 32
+    index = _two_entry_index([[1.0, 0.0], [0.0, 1.0]])
+    index.save(source_directory)
+    source_generation = _active_generation_directory(source_directory)
+    (target_directory / INDEX_GENERATIONS_DIRECTORY).mkdir(parents=True)
+    (target_directory / INDEX_GENERATIONS_DIRECTORY / generation_id).symlink_to(
+        source_generation,
+        target_is_directory=True,
+    )
+    _write_active_pointer(
+        target_directory,
+        {
+            "schema_version": INDEX_POINTER_SCHEMA_VERSION,
+            "generation_id": generation_id,
+        },
+    )
+
+    with pytest.raises(ValueError, match="generation path.*symbolic link"):
+        NumpyVectorIndex.load(target_directory)
+
+
+@pytest.mark.parametrize(
+    "symlink_filename",
+    [INDEX_MANIFEST_FILENAME, INDEX_VECTOR_FILENAME],
+)
+def test_active_generation_file_symlink_is_rejected(tmp_path: Path, symlink_filename: str) -> None:
+    source_directory = tmp_path / "source"
+    target_directory = tmp_path / "target"
+    generation_id = "0" * 32
+    index = _two_entry_index([[1.0, 0.0], [0.0, 1.0]])
+    index.save(source_directory)
+    source_generation = _active_generation_directory(source_directory)
+    target_generation = target_directory / INDEX_GENERATIONS_DIRECTORY / generation_id
+    target_generation.mkdir(parents=True)
+    other_filename = (
+        INDEX_VECTOR_FILENAME
+        if symlink_filename == INDEX_MANIFEST_FILENAME
+        else INDEX_MANIFEST_FILENAME
+    )
+    (target_generation / symlink_filename).symlink_to(source_generation / symlink_filename)
+    (target_generation / other_filename).write_bytes(
+        (source_generation / other_filename).read_bytes()
+    )
+    _write_active_pointer(
+        target_directory,
+        {
+            "schema_version": INDEX_POINTER_SCHEMA_VERSION,
+            "generation_id": generation_id,
+        },
+    )
+
+    with pytest.raises(ValueError, match="generation files.*symbolic links"):
+        NumpyVectorIndex.load(target_directory)
+
+
+def test_save_rejects_a_symlinked_generations_directory(tmp_path: Path) -> None:
+    index_directory = tmp_path / "index"
+    outside_directory = tmp_path / "outside"
+    index_directory.mkdir()
+    outside_directory.mkdir()
+    (index_directory / INDEX_GENERATIONS_DIRECTORY).symlink_to(
+        outside_directory,
+        target_is_directory=True,
+    )
+    index = _two_entry_index([[1.0, 0.0], [0.0, 1.0]])
+
+    with pytest.raises(ValueError, match="storage directory.*symbolic link"):
+        index.save(index_directory)
+
+
+def test_save_synchronizes_new_parent_directories_bottom_up(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    index_directory = tmp_path / "parent" / "index"
+    synchronized_directories: list[Path] = []
+    real_fsync_directory = NumpyVectorIndex._fsync_directory
+
+    def record_directory_sync(directory: Path) -> None:
+        synchronized_directories.append(directory)
+        real_fsync_directory(directory)
+
+    monkeypatch.setattr(
+        NumpyVectorIndex,
+        "_fsync_directory",
+        staticmethod(record_directory_sync),
+    )
+
+    _two_entry_index([[1.0, 0.0], [0.0, 1.0]]).save(index_directory)
+
+    assert synchronized_directories[:3] == [
+        index_directory.parent,
+        tmp_path,
+        index_directory,
+    ]
+
+
+def test_save_enforces_the_durability_operation_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    generations_directory = tmp_path / INDEX_GENERATIONS_DIRECTORY
+    generations_directory.mkdir()
+    active_path = tmp_path / INDEX_ACTIVE_FILENAME
+    events: list[str] = []
+    real_fsync_file = NumpyVectorIndex._fsync_file
+    real_fsync_directory = NumpyVectorIndex._fsync_directory
+    real_replace = pipeline_module.os.replace
+
+    def record_file_sync(path: Path) -> None:
+        if path.name == INDEX_VECTOR_FILENAME:
+            events.append("fsync vectors")
+        elif path.name == INDEX_MANIFEST_FILENAME:
+            events.append("fsync manifest")
+        else:
+            events.append("fsync active pointer")
+        real_fsync_file(path)
+
+    def record_directory_sync(directory: Path) -> None:
+        if directory == generations_directory:
+            events.append("fsync generations directory")
+        elif directory == tmp_path:
+            events.append("fsync index directory")
+        else:
+            events.append("fsync staging directory")
+        real_fsync_directory(directory)
+
+    def record_replace(source: Path, destination: Path) -> None:
+        destination_path = Path(destination)
+        if destination_path == active_path:
+            events.append("replace active pointer")
+        else:
+            events.append("publish generation")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(
+        NumpyVectorIndex,
+        "_fsync_file",
+        staticmethod(record_file_sync),
+    )
+    monkeypatch.setattr(
+        NumpyVectorIndex,
+        "_fsync_directory",
+        staticmethod(record_directory_sync),
+    )
+    monkeypatch.setattr(pipeline_module.os, "replace", record_replace)
+
+    _two_entry_index([[1.0, 0.0], [0.0, 1.0]]).save(tmp_path)
+
+    assert events == [
+        "fsync vectors",
+        "fsync manifest",
+        "fsync staging directory",
+        "publish generation",
+        "fsync generations directory",
+        "fsync active pointer",
+        "replace active pointer",
+        "fsync index directory",
+    ]
+
+
+def test_cleanup_failure_does_not_mask_the_publication_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    generations_directory = tmp_path / INDEX_GENERATIONS_DIRECTORY
+    real_replace = pipeline_module.os.replace
+
+    def fail_generation_publication(source: Path, destination: Path) -> None:
+        if Path(destination).parent == generations_directory:
+            raise OSError("simulated publication failure")
+        real_replace(source, destination)
+
+    def fail_cleanup(
+        path: Path,
+        missing_ok: bool = False,
+    ) -> None:
+        del path, missing_ok
+        raise PermissionError("simulated cleanup failure")
+
+    monkeypatch.setattr(pipeline_module.os, "replace", fail_generation_publication)
+    monkeypatch.setattr(Path, "unlink", fail_cleanup)
+
+    with pytest.raises(OSError, match="simulated publication failure"):
+        _two_entry_index([[1.0, 0.0], [0.0, 1.0]]).save(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("failure_phase", "expected_generation_count"),
+    [
+        pytest.param("generation", 1, id="before-generation-publication"),
+        pytest.param("active", 2, id="before-active-switch"),
+    ],
+)
+def test_interrupted_save_preserves_the_previous_active_generation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_phase: str,
+    expected_generation_count: int,
+) -> None:
+    old_index = _two_entry_index([[1.0, 0.0], [0.0, 1.0]])
+    new_index = _two_entry_index([[0.0, 1.0], [1.0, 0.0]])
+    old_index.save(tmp_path)
+    active_path = tmp_path / INDEX_ACTIVE_FILENAME
+    generations_directory = tmp_path / INDEX_GENERATIONS_DIRECTORY
+    old_pointer_bytes = active_path.read_bytes()
+    real_replace = pipeline_module.os.replace
+
+    def fail_at_selected_phase(source: Path, destination: Path) -> None:
+        destination_path = Path(destination)
+        fail_generation = (
+            failure_phase == "generation" and destination_path.parent == generations_directory
+        )
+        fail_active = failure_phase == "active" and destination_path == active_path
+        if fail_generation or fail_active:
+            raise OSError("simulated interrupted save")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(pipeline_module.os, "replace", fail_at_selected_phase)
+
+    with pytest.raises(OSError, match="simulated interrupted save"):
+        new_index.save(tmp_path)
+
+    assert active_path.read_bytes() == old_pointer_bytes
+    assert _first_hit_id(tmp_path) == CORPUS[0]["id"]
+    assert len(_generation_directories(tmp_path)) == expected_generation_count
+    assert not list(generations_directory.glob(".*.tmp"))
+    assert not list(tmp_path.glob(f".{INDEX_ACTIVE_FILENAME}.*.tmp"))
+
+
+def test_reader_uses_the_generation_captured_before_an_active_switch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    old_index = _two_entry_index([[1.0, 0.0], [0.0, 1.0]])
+    new_index = _two_entry_index([[0.0, 1.0], [1.0, 0.0]])
+    old_index.save(tmp_path)
+    old_vector_path = _index_file_path(tmp_path, INDEX_VECTOR_FILENAME)
+    digest_captured = Event()
+    resume_reader = Event()
+    real_file_sha256 = NumpyVectorIndex._file_sha256
+
+    def pause_after_old_digest(path: Path) -> str:
+        digest = real_file_sha256(path)
+        if path == old_vector_path and not digest_captured.is_set():
+            digest_captured.set()
+            if not resume_reader.wait(timeout=5):
+                raise AssertionError("reader was not resumed")
+        return digest
+
+    monkeypatch.setattr(
+        NumpyVectorIndex,
+        "_file_sha256",
+        staticmethod(pause_after_old_digest),
+    )
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        reader = executor.submit(_first_hit_id, tmp_path)
+        assert digest_captured.wait(timeout=5)
+        try:
+            new_index.save(tmp_path)
+        finally:
+            resume_reader.set()
+        assert reader.result(timeout=5) == CORPUS[0]["id"]
+
+    assert _first_hit_id(tmp_path) == CORPUS[1]["id"]
+
+
+def test_concurrent_writers_publish_disjoint_complete_generations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first_index = _two_entry_index([[1.0, 0.0], [0.0, 1.0]])
+    second_index = _two_entry_index([[0.0, 1.0], [1.0, 0.0]])
+    generations_directory = tmp_path / INDEX_GENERATIONS_DIRECTORY
+    publish_barrier = Barrier(2)
+    real_replace = pipeline_module.os.replace
+
+    def synchronize_generation_publication(source: Path, destination: Path) -> None:
+        destination_path = Path(destination)
+        if destination_path.parent == generations_directory:
+            publish_barrier.wait(timeout=5)
+        real_replace(source, destination)
+
+    monkeypatch.setattr(
+        pipeline_module.os,
+        "replace",
+        synchronize_generation_publication,
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(first_index.save, tmp_path),
+            executor.submit(second_index.save, tmp_path),
+        ]
+        for future in futures:
+            future.result(timeout=10)
+
+    generation_directories = _generation_directories(tmp_path)
+    assert len(generation_directories) == 2
+    assert _active_generation_directory(tmp_path) in generation_directories
+    assert {_first_hit_id(path) for path in generation_directories} == {
+        CORPUS[0]["id"],
+        CORPUS[1]["id"],
+    }
+    assert _first_hit_id(tmp_path) in {CORPUS[0]["id"], CORPUS[1]["id"]}
+
+
+def test_post_switch_sync_failure_leaves_the_new_generation_loadable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    old_index = _two_entry_index([[1.0, 0.0], [0.0, 1.0]])
+    new_index = _two_entry_index([[0.0, 1.0], [1.0, 0.0]])
+    old_index.save(tmp_path)
+    real_fsync_directory = NumpyVectorIndex._fsync_directory
+
+    def fail_final_index_sync(directory: Path) -> None:
+        if directory == tmp_path:
+            raise OSError("simulated final directory sync failure")
+        real_fsync_directory(directory)
+
+    monkeypatch.setattr(
+        NumpyVectorIndex,
+        "_fsync_directory",
+        staticmethod(fail_final_index_sync),
+    )
+
+    with pytest.raises(OSError, match="final directory sync failure"):
+        new_index.save(tmp_path)
+
+    assert _first_hit_id(tmp_path) == CORPUS[1]["id"]
+    assert len(_generation_directories(tmp_path)) == 2
+
+
 def test_schema_v1_load_accepts_a_custom_model_and_unknown_manifest_fields(
     tmp_path: Path,
 ) -> None:
     index = NumpyVectorIndex(dimension=1, embedding_model="custom-embedding-model")
     index.index([CORPUS[0]], np.asarray([[2.0]], dtype=np.float32))
     index.save(tmp_path)
-    vector_path = tmp_path / INDEX_VECTOR_FILENAME
+    vector_path = _index_file_path(tmp_path, INDEX_VECTOR_FILENAME)
     vectors = np.load(vector_path, allow_pickle=False)
     vectors[0, 0] = np.float32(1.0 + 5e-6)
     _rewrite_vectors(tmp_path, vectors, update_digest=True)
@@ -601,7 +1147,10 @@ def test_schema_v1_load_accepts_a_custom_model_and_unknown_manifest_fields(
     assert loaded.embedding_model == "custom-embedding-model"
     roundtrip_directory = tmp_path / "roundtrip"
     loaded.save(roundtrip_directory)
-    assert (roundtrip_directory / INDEX_VECTOR_FILENAME).read_bytes() == vector_path.read_bytes()
+    assert (
+        _index_file_path(roundtrip_directory, INDEX_VECTOR_FILENAME).read_bytes()
+        == vector_path.read_bytes()
+    )
 
 
 @pytest.mark.parametrize(
@@ -640,6 +1189,8 @@ def test_unpaid_ingest_rejects_an_invalid_embedding_matrix(tmp_path: Path, matri
             embedder=_MatrixEmbeddingProvider(matrix),
             output_directory=tmp_path,
         )
+    assert not (tmp_path / INDEX_ACTIVE_FILENAME).exists()
+    assert not (tmp_path / INDEX_GENERATIONS_DIRECTORY).exists()
     assert not (tmp_path / INDEX_MANIFEST_FILENAME).exists()
     assert not (tmp_path / INDEX_VECTOR_FILENAME).exists()
 
@@ -650,7 +1201,20 @@ def test_unpaid_ingest_rejects_an_invalid_embedding_matrix(tmp_path: Path, matri
 )
 def test_index_load_rejects_an_incomplete_file_pair(tmp_path: Path, missing_filename: str) -> None:
     _persist_fixed_index(tmp_path)
-    (tmp_path / missing_filename).unlink()
+    _index_file_path(tmp_path, missing_filename).unlink()
+    with pytest.raises(FileNotFoundError, match="Active index generation"):
+        NumpyVectorIndex.load(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "present_filename",
+    [INDEX_MANIFEST_FILENAME, INDEX_VECTOR_FILENAME],
+)
+def test_index_load_rejects_an_incomplete_legacy_pair(
+    tmp_path: Path, present_filename: str
+) -> None:
+    (tmp_path / present_filename).write_bytes(b"incomplete")
+
     with pytest.raises(FileNotFoundError, match="No complete index"):
         NumpyVectorIndex.load(tmp_path)
 
@@ -800,7 +1364,7 @@ def test_index_load_rejects_a_corpus_fingerprint_mismatch(tmp_path: Path) -> Non
 
 def test_index_load_rejects_a_vector_fingerprint_mismatch(tmp_path: Path) -> None:
     _persist_fixed_index(tmp_path)
-    vector_path = tmp_path / INDEX_VECTOR_FILENAME
+    vector_path = _index_file_path(tmp_path, INDEX_VECTOR_FILENAME)
     vectors = np.load(vector_path, allow_pickle=False)
     vectors[0, 0] += np.float32(0.25)
     _rewrite_vectors(tmp_path, vectors, update_digest=False)
@@ -823,7 +1387,7 @@ def test_index_load_rejects_invalid_persisted_vectors(
     tmp_path: Path, mutation: str, message: str
 ) -> None:
     _persist_fixed_index(tmp_path)
-    vector_path = tmp_path / INDEX_VECTOR_FILENAME
+    vector_path = _index_file_path(tmp_path, INDEX_VECTOR_FILENAME)
     vectors = np.load(vector_path, allow_pickle=False)
     if mutation == "row-misalignment":
         vectors = vectors[:-1]
