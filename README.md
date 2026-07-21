@@ -60,7 +60,7 @@ export ANTHROPIC_API_KEY="replace-with-your-anthropic-api-key"
 
 VerdigrisE does not load `.env` files. `OPENAI_API_KEY` owns live embedding and generation calls. `ANTHROPIC_API_KEY` owns RagaliQ's native Claude judge calls. The free default suite requires neither key.
 
-> **Paid-call boundary:** Do not run a paid command without explicit approval. RagaliQ's `--ragaliq-cost-limit` is an approximate post-test guard based on recorded token counts, not a strict pre-spend cap.
+> **Paid-call boundary:** Do not run a paid command without explicit approval. Every VerdigrisE-owned OpenAI client disables SDK retries with `max_retries=0` and applies a 120-second timeout to each network operation. That timeout is not a whole-command deadline, and a timed-out request may still be processed or billed. RagaliQ's `--ragaliq-cost-limit` is an approximate post-test guard based on recorded token counts, not a strict pre-spend cap.
 
 ---
 
@@ -226,10 +226,10 @@ raw corpus dictionary
 |---|---|---|
 | Free deterministic contracts | `.venv/bin/python -m pytest eval/ -q` | Fixed embeddings and answers, provider fakes, exact contracts, plus canned-transport RagaliQ wiring |
 | Free deterministic branch coverage | `.venv/bin/python -m pytest --cov --cov-report=term-missing eval/ -q` | The same free suite measures application/adapter branches and enforces the 81% floor |
-| Paid all-golden OpenAI acceptance | `.venv/bin/python -m pytest -o addopts='' -m "openai and not rag_test" eval/ -q` | One corpus embedding batch plus seven query embeddings and seven generations: 15 nominal OpenAI requests |
-| Paid cross-family semantic evaluation | `.venv/bin/python -m pytest -o addopts='' -m "openai and rag_test" --ragaliq-cost-limit 5.00 eval/ -q` | One corpus embedding batch plus six query embeddings and six generations: 13 nominal OpenAI requests; then six answerable cases judged by native RagaliQ Claude faithfulness and relevance |
+| Paid all-golden OpenAI acceptance | `.venv/bin/python -m pytest -o addopts='' -m "openai and not rag_test" eval/ -q` | One corpus embedding batch plus seven query embeddings and seven generations: at most 15 OpenAI SDK attempts |
+| Paid cross-family semantic evaluation | `.venv/bin/python -m pytest -o addopts='' -m "openai and rag_test" --ragaliq-cost-limit 5.00 eval/ -q` | One corpus embedding batch plus six query embeddings and six generations: at most 13 OpenAI SDK attempts; then six answerable cases judged by native RagaliQ Claude faithfulness and relevance |
 
-The module-scoped paid pipeline embeds the corpus once, while each selected parametrized node asks only its own case. For `n` selected nodes from one paid tier, the nominal OpenAI fan-out is `1 + 2n` requests: one corpus embedding, `n` query embeddings, and `n` generations. A single selected node therefore makes 3 nominal OpenAI requests. The complete all-golden tier remains 15 requests for seven cases; the complete semantic tier makes 13 OpenAI requests for six answerable cases before RagaliQ judging. Provider-managed retries can increase the actual request count.
+The module-scoped paid pipeline embeds the corpus once, while each selected parametrized node asks only its own case. For `n` selected nodes from one paid tier, the maximum OpenAI SDK fan-out is `1 + 2n` attempts: one corpus embedding, `n` query embeddings, and `n` generations. A single selected node therefore makes at most 3 attempts. The complete all-golden tier makes at most 15 attempts for seven cases; the complete semantic tier makes at most 13 OpenAI attempts for six answerable cases before RagaliQ judging. Early failures can reduce these counts, and `max_retries=0` prevents OpenAI SDK retries from multiplying them. A timeout does not prove provider-side cancellation, so final cost remains uncertain. RagaliQ's Claude transport retains its own retry behavior and model-output-dependent fan-out.
 
 ### Markers
 
@@ -477,7 +477,7 @@ The next rungs are intentionally visible but not implemented:
 3. Add lexical retrieval, metadata filters, hybrid fusion, and reranking behind the current retrieval-result boundary.
 4. Enforce project, document, clause, table, row, or cell access policy before evidence reaches the prompt.
 5. Add claim-to-evidence validation, source-span citations, and durable answer audit events.
-6. Move the synchronous local boundary into an observable backend with retry, rate-limit, cache, cost, and failure policies.
+6. Move the synchronous local boundary into an observable backend with adaptive retry and backoff, rate-limit, cache, cost, and failure policies.
 7. Expand RagaliQ semantic evaluation over versioned production fixtures without transferring exact compliance assertions to probabilistic judges.
 
 VerdigrisE remains a sandbox: it does not claim PDF support, table extraction, production storage, web serving, generated reports, or deployment readiness.

@@ -20,7 +20,6 @@ from typing import Any
 
 import numpy as np
 import pytest
-from openai import OpenAI
 from pydantic import BaseModel, ConfigDict, ValidationError
 from ragaliq import RAGTestResult
 from ragaliq.judges import DEFAULT_JUDGE_MODEL
@@ -38,6 +37,8 @@ from config import (
     INDEX_POINTER_SCHEMA_VERSION,
     INDEX_SCHEMA_VERSION,
     INDEX_VECTOR_FILENAME,
+    OPENAI_MAX_RETRIES,
+    OPENAI_TIMEOUT_SECONDS,
     TIE_BREAK_RULE,
     TOP_K,
 )
@@ -1649,6 +1650,40 @@ def test_stale_embedding_model_is_rejected_before_provider_initialization(
         pipeline_module._real_pipeline(index_directory=tmp_path)
 
 
+def test_real_client_uses_exact_bounded_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "unit-test-placeholder")
+    client = object()
+    constructor_kwargs: dict[str, object] = {}
+
+    def build_client(**kwargs: object) -> object:
+        constructor_kwargs.update(kwargs)
+        return client
+
+    monkeypatch.setattr(pipeline_module, "OpenAI", build_client)
+
+    assert OPENAI_MAX_RETRIES == 0
+    assert OPENAI_TIMEOUT_SECONDS == 120.0
+    assert pipeline_module._real_client() is client
+    assert constructor_kwargs == {
+        "max_retries": 0,
+        "timeout": 120.0,
+    }
+
+
+def test_real_client_rejects_missing_key_before_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(
+        pipeline_module,
+        "OpenAI",
+        lambda **_kwargs: pytest.fail("client constructed without a credential"),
+    )
+
+    with pytest.raises(RuntimeError, match="OPENAI_API_KEY is not set"):
+        pipeline_module._real_client()
+
+
 def test_zero_vector_is_rejected() -> None:
     index = NumpyVectorIndex(dimension=2, embedding_model=EMBEDDING_MODEL)
     with pytest.raises(ValueError, match="zero vectors"):
@@ -2059,19 +2094,69 @@ def _build_ingested_pipeline(
     )
 
 
+def _build_live_openai_pipeline(*, output_directory: Path) -> RagPipeline:
+    """Build the paid fixture through the same policy-bound client as runtime paths."""
+
+    client = pipeline_module._real_client()
+    return _build_ingested_pipeline(
+        embedder=OpenAIEmbeddingProvider(client),
+        generator=OpenAIAnswerGenerator(client),
+        output_directory=output_directory,
+        debug=True,
+    )
+
+
+def test_live_openai_pipeline_uses_runtime_client_factory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = object()
+    expected_pipeline = object()
+    build_kwargs: dict[str, object] = {}
+    monkeypatch.setattr(pipeline_module, "_real_client", lambda: client)
+
+    def capture_build(**kwargs: object) -> object:
+        build_kwargs.update(kwargs)
+        return expected_pipeline
+
+    monkeypatch.setitem(globals(), "_build_ingested_pipeline", capture_build)
+
+    assert _build_live_openai_pipeline(output_directory=tmp_path) is expected_pipeline
+    embedder = build_kwargs["embedder"]
+    generator = build_kwargs["generator"]
+    assert isinstance(embedder, OpenAIEmbeddingProvider)
+    assert isinstance(generator, OpenAIAnswerGenerator)
+    assert embedder._client is client
+    assert generator._client is client
+    assert build_kwargs["output_directory"] == tmp_path
+    assert build_kwargs["debug"] is True
+
+
 @pytest.fixture(scope="module")
 def live_openai_pipeline(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> RagPipeline:
     """Paid fixture: embed the corpus once; selected tests ask their own case."""
 
-    client = OpenAI()
-    return _build_ingested_pipeline(
-        embedder=OpenAIEmbeddingProvider(client),
-        generator=OpenAIAnswerGenerator(client),
+    return _build_live_openai_pipeline(
         output_directory=tmp_path_factory.mktemp("live-openai-index"),
-        debug=True,
     )
+
+
+def test_live_openai_fixture_delegates_to_policy_bound_builder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    expected_pipeline = object()
+    captured_directories: list[Path] = []
+
+    def capture_build(*, output_directory: Path) -> object:
+        captured_directories.append(output_directory)
+        return expected_pipeline
+
+    monkeypatch.setitem(globals(), "_build_live_openai_pipeline", capture_build)
+    tmp_path_factory = SimpleNamespace(mktemp=lambda _prefix: tmp_path)
+
+    assert live_openai_pipeline.__wrapped__(tmp_path_factory) is expected_pipeline
+    assert captured_directories == [tmp_path]
 
 
 def _assert_live_golden_contract(case: GoldenCase, record: RagRecord) -> None:
