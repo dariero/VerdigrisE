@@ -174,13 +174,14 @@ Each dosage case materializes one declared collision sibling in top-2 context an
 
 ## RagRecord Capture
 
-`RetrievedChunk` preserves one ranked result:
+`RetrievedChunk` preserves one ranked result. Its metadata is detached from caller-owned
+containers and recursively frozen after validation:
 
 ```python
 class RetrievedChunk(BaseModel):
     id: str
     text: str
-    metadata: dict[str, object]
+    metadata: Mapping[str, object]
     distance: float
     similarity: float
 ```
@@ -190,15 +191,15 @@ class RetrievedChunk(BaseModel):
 ```python
 class RagRecord(BaseModel):
     question: str
-    retrieved_ids: list[str]
-    retrieved_chunks: list[RetrievedChunk]
-    distances: list[float]
+    retrieved_ids: tuple[str, ...]
+    retrieved_chunks: tuple[RetrievedChunk, ...]
+    distances: tuple[float, ...]
     context_payload: str
-    generation_messages: list[PromptMessage]
+    generation_messages: tuple[PromptMessage, ...]
     answer: str
 ```
 
-The model validator rejects rank misalignment between `retrieved_ids`, `retrieved_chunks`, and `distances`.
+The model validator rejects rank misalignment between `retrieved_ids`, `retrieved_chunks`, and `distances`. Rank-bearing sequences are immutable tuples, and nested metadata mappings and sequences are recursively read-only, so a valid capture cannot silently drift after construction. Metadata accepts only string-keyed mappings, ordered sequences, and JSON scalar leaves; unsupported mutable objects are rejected. Constructors continue to accept ordinary lists and dictionaries, updated model copies are revalidated, and `model_dump()` and `model_dump_json()` preserve the public array and object shapes.
 
 ```text
 raw corpus dictionary
@@ -353,7 +354,7 @@ For compatibility, `load()` also accepts the previous root-level `manifest.json`
 
 ## Development
 
-Ruff is the repository's formatter and linter. Mypy strictly checks the application modules and RagaliQ adapter. Pytest-cov measures branch coverage over the same application/adapter scope. The free baseline is 87.22%, enforced as a clean integer `fail_under = 81`; paid provider paths remain excluded. Pre-commit runs the static tools and repository-hygiene hooks before commits. Every hook uses `uv run --no-sync` and the hash-locked `.venv`; hook execution does not create separate environments or resolve additional packages. The sandbox still has no build backend, package-publication layer, or task runner. uv owns environment creation and exact dependency synchronization.
+Ruff is the repository's formatter and linter. Mypy strictly checks the application modules and RagaliQ adapter. Pytest-cov measures branch coverage over the same application/adapter scope and enforces a clean integer `fail_under = 81`; paid provider paths remain excluded. Pre-commit runs the static tools and repository-hygiene hooks before commits. Every hook uses `uv run --no-sync` and the hash-locked `.venv`; hook execution does not create separate environments or resolve additional packages. The sandbox still has no build backend, package-publication layer, or task runner. uv owns environment creation and exact dependency synchronization.
 
 GitHub Actions validates every ready pull request against its prospective merge result and validates `main` after each merge. CI installs the hash-locked Python 3.14 environment from a clean checkout, validates the pre-commit configuration, runs every repository hook, and runs the deterministic branch-coverage gate with OpenAI and RagaliQ paid markers explicitly excluded. Provider key variables are explicitly empty throughout the job, and the workflow does not reference provider secrets.
 
