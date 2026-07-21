@@ -39,6 +39,8 @@ from config import (
     INDEX_POINTER_SCHEMA_VERSION,
     INDEX_SCHEMA_VERSION,
     INDEX_VECTOR_FILENAME,
+    OPENAI_MAX_RETRIES,
+    OPENAI_TIMEOUT_SECONDS,
     TIE_BREAK_RULE,
     TOP_K,
 )
@@ -678,7 +680,10 @@ def ingest_corpus(
 
 def _real_client() -> OpenAI:
     _require_api_key()
-    return OpenAI()
+    return OpenAI(
+        max_retries=OPENAI_MAX_RETRIES,
+        timeout=OPENAI_TIMEOUT_SECONDS,
+    )
 
 
 def _real_pipeline(*, index_directory: Path = INDEX_DIRECTORY, debug: bool = False) -> RagPipeline:
