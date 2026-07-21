@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import pickle
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Barrier, Event
@@ -19,7 +21,7 @@ from typing import Any
 import numpy as np
 import pytest
 from openai import OpenAI
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 from ragaliq import RAGTestResult
 from ragaliq.judges import DEFAULT_JUDGE_MODEL
 
@@ -46,7 +48,7 @@ from eval.ragaliq_adapter import (
     build_ragaliq_runner,
     to_ragaliq_case,
 )
-from models import PromptMessage, RagRecord
+from models import PromptMessage, RagRecord, RetrievedChunk
 from pipeline import (
     AnswerGenerator,
     EmbeddingProvider,
@@ -379,7 +381,7 @@ def test_near_synonym_pair_is_distinct_and_factually_conflicting() -> None:
 def test_expected_source_and_rank_order(case: GoldenCase, records: dict[str, RagRecord]) -> None:
     record = records[case.case_id]
     assert len(record.retrieved_ids) == TOP_K
-    assert record.retrieved_ids == case.expected_ranked_ids
+    assert list(record.retrieved_ids) == case.expected_ranked_ids
     if case.expected_retrieved_id is not None:
         assert case.expected_retrieved_id in record.retrieved_ids
 
@@ -476,8 +478,8 @@ def test_distance_similarity_and_rank_fields_align(
     case: GoldenCase, records: dict[str, RagRecord]
 ) -> None:
     record = records[case.case_id]
-    assert record.retrieved_ids == [chunk.id for chunk in record.retrieved_chunks]
-    assert record.distances == [chunk.distance for chunk in record.retrieved_chunks]
+    assert record.retrieved_ids == tuple(chunk.id for chunk in record.retrieved_chunks)
+    assert record.distances == tuple(chunk.distance for chunk in record.retrieved_chunks)
     for chunk in record.retrieved_chunks:
         assert -1.0 <= chunk.similarity <= 1.0
         assert 0.0 <= chunk.distance <= 2.0
@@ -529,10 +531,216 @@ def test_prompt_builder_is_directly_callable_without_a_client(
     record = records[case.case_id]
     context, messages = build_generation_messages(record.question, record.retrieved_chunks)
     assert context == record.context_payload
-    assert messages == record.generation_messages
+    assert messages == list(record.generation_messages)
     assert ABSTENTION_PHRASE in messages[0].content
     assert "Repeat the supporting" in messages[0].content
     assert "`grimoire_id` verbatim" in messages[0].content
+
+
+def _capture_contract_record(metadata: dict[str, object] | None = None) -> RagRecord:
+    chunk = RetrievedChunk(
+        id="verdigris-dose-verdant",
+        text="Verbatim evidence.",
+        metadata=metadata
+        or {
+            "grimoire_id": "GRIM-VERDANT",
+            "folio": 21,
+            "audit": {"qualifiers": ["after dusk"]},
+        },
+        distance=0.25,
+        similarity=0.75,
+    )
+    return RagRecord(
+        question="What is the scoped fact?",
+        retrieved_ids=[chunk.id],
+        retrieved_chunks=[chunk],
+        distances=[chunk.distance],
+        context_payload="[CONTEXT] Verbatim evidence.",
+        generation_messages=[
+            PromptMessage(role="system", content="Use only context."),
+            PromptMessage(role="user", content="What is the scoped fact?"),
+        ],
+        answer="The scoped fact [verdigris-dose-verdant].",
+    )
+
+
+@pytest.mark.parametrize(
+    ("override", "message"),
+    [
+        pytest.param(
+            {"retrieved_ids": ["wrong-id"]},
+            "retrieved_ids must match",
+            id="ids",
+        ),
+        pytest.param(
+            {"distances": [0.5]},
+            "distances must match",
+            id="distances",
+        ),
+    ],
+)
+def test_rag_record_rejects_rank_misalignment(override: dict[str, object], message: str) -> None:
+    chunk = RetrievedChunk(
+        id="verdigris-dose-verdant",
+        text="Verbatim evidence.",
+        metadata={"grimoire_id": "GRIM-VERDANT", "folio": 21},
+        distance=0.25,
+        similarity=0.75,
+    )
+    payload: dict[str, object] = {
+        "question": "What is the scoped fact?",
+        "retrieved_ids": [chunk.id],
+        "retrieved_chunks": [chunk],
+        "distances": [chunk.distance],
+        "context_payload": "[CONTEXT] Verbatim evidence.",
+        "generation_messages": [
+            {"role": "system", "content": "Use only context."},
+            {"role": "user", "content": "What is the scoped fact?"},
+        ],
+        "answer": "The scoped fact [verdigris-dose-verdant].",
+    }
+    payload.update(override)
+
+    with pytest.raises(ValidationError, match=message):
+        RagRecord.model_validate(payload)
+
+
+def test_capture_rank_collections_are_immutable() -> None:
+    record = _capture_contract_record()
+
+    assert isinstance(record.retrieved_ids, tuple)
+    assert isinstance(record.retrieved_chunks, tuple)
+    assert isinstance(record.distances, tuple)
+    assert isinstance(record.generation_messages, tuple)
+    with pytest.raises(TypeError):
+        record.retrieved_ids[0] = "wrong-id"  # type: ignore[index]
+    with pytest.raises(TypeError):
+        record.retrieved_chunks[0] = record.retrieved_chunks[0]  # type: ignore[index]
+    with pytest.raises(TypeError):
+        record.distances[0] = 2.0  # type: ignore[index]
+    with pytest.raises(TypeError):
+        record.generation_messages[0] = record.generation_messages[0]  # type: ignore[index]
+
+
+def test_chunk_metadata_is_detached_and_recursively_immutable() -> None:
+    qualifiers = ["after dusk"]
+    audit = {"qualifiers": qualifiers}
+    metadata: dict[str, object] = {
+        "grimoire_id": "GRIM-VERDANT",
+        "folio": 21,
+        "audit": audit,
+    }
+    record = _capture_contract_record(metadata)
+
+    metadata["folio"] = 999
+    qualifiers.append("at dawn")
+    audit["unexpected"] = True
+
+    chunk_metadata = record.retrieved_chunks[0].metadata
+    assert len(chunk_metadata) == 3
+    assert chunk_metadata["folio"] == 21
+    nested_audit = chunk_metadata["audit"]
+    assert isinstance(nested_audit, Mapping)
+    assert nested_audit["qualifiers"] == ("after dusk",)
+    assert "unexpected" not in nested_audit
+    with pytest.raises(TypeError):
+        chunk_metadata["folio"] = 999  # type: ignore[index]
+    with pytest.raises(TypeError):
+        nested_audit["qualifiers"] = ()  # type: ignore[index]
+    with pytest.raises(TypeError):
+        nested_audit["qualifiers"][0] = "at dawn"  # type: ignore[index]
+
+
+def test_chunk_metadata_rejects_unsupported_mutable_leaves() -> None:
+    mutable_leaf = SimpleNamespace(value=1)
+
+    with pytest.raises(ValidationError, match="JSON scalar leaves"):
+        RetrievedChunk(
+            id="verdigris-dose-verdant",
+            text="Verbatim evidence.",
+            metadata={"grimoire_id": "GRIM-VERDANT", "mutable": mutable_leaf},
+            distance=0.25,
+            similarity=0.75,
+        )
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_chunk_metadata_rejects_non_finite_float_leaves(value: float) -> None:
+    with pytest.raises(ValidationError, match="float leaves must be finite"):
+        RetrievedChunk(
+            id="verdigris-dose-verdant",
+            text="Verbatim evidence.",
+            metadata={"grimoire_id": "GRIM-VERDANT", "value": value},
+            distance=0.25,
+            similarity=0.75,
+        )
+
+
+def test_chunk_metadata_rejects_non_string_nested_mapping_keys() -> None:
+    with pytest.raises(ValidationError, match="mapping keys must be strings"):
+        RetrievedChunk(
+            id="verdigris-dose-verdant",
+            text="Verbatim evidence.",
+            metadata={"grimoire_id": "GRIM-VERDANT", "nested": {1: "invalid"}},
+            distance=0.25,
+            similarity=0.75,
+        )
+
+
+def test_immutable_captures_preserve_dump_and_json_container_shapes() -> None:
+    record = _capture_contract_record()
+
+    dumped = record.model_dump()
+    assert isinstance(dumped["retrieved_ids"], list)
+    assert isinstance(dumped["retrieved_chunks"], list)
+    assert isinstance(dumped["distances"], list)
+    assert isinstance(dumped["generation_messages"], list)
+    metadata = dumped["retrieved_chunks"][0]["metadata"]
+    assert isinstance(metadata, dict)
+    assert metadata["audit"]["qualifiers"] == ["after dusk"]
+    assert json.loads(record.model_dump_json()) == dumped
+    assert RagRecord.model_validate_json(record.model_dump_json()) == record
+
+
+def test_immutable_capture_supports_deep_model_copy() -> None:
+    record = _capture_contract_record()
+
+    copied = record.model_copy(deep=True)
+
+    assert copied == record
+    assert copied is not record
+    assert copied.retrieved_chunks[0] is not record.retrieved_chunks[0]
+    assert copied.model_dump() == record.model_dump()
+
+
+def test_capture_model_copy_revalidates_updates() -> None:
+    record = _capture_contract_record()
+
+    updated = record.model_copy(update={"retrieved_ids": [record.retrieved_ids[0]]})
+
+    assert updated.retrieved_ids == record.retrieved_ids
+    assert isinstance(updated.retrieved_ids, tuple)
+    deep_updated = record.model_copy(update={"answer": "Updated answer."}, deep=True)
+    assert deep_updated.answer == "Updated answer."
+    assert deep_updated.retrieved_chunks[0] is not record.retrieved_chunks[0]
+    with pytest.raises(ValidationError, match="retrieved_ids must match"):
+        record.model_copy(update={"retrieved_ids": ["wrong-id"]})
+    with pytest.raises(ValidationError, match="JSON scalar leaves"):
+        record.retrieved_chunks[0].model_copy(
+            update={"metadata": {"mutable": SimpleNamespace(value=1)}}
+        )
+
+
+def test_immutable_capture_supports_pickle_round_trip() -> None:
+    record = _capture_contract_record()
+
+    restored = pickle.loads(pickle.dumps(record))
+
+    assert restored == record
+    assert restored is not record
+    assert restored.model_dump() == record.model_dump()
+    with pytest.raises(TypeError):
+        restored.retrieved_chunks[0].metadata["folio"] = 999
 
 
 def test_cosine_ties_use_ascending_stable_id() -> None:

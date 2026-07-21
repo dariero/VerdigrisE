@@ -635,11 +635,11 @@ class RagPipeline:
         answer = self._generator.generate(question, messages)
         return RagRecord(
             question=question,
-            retrieved_ids=[chunk.id for chunk in chunks],
-            retrieved_chunks=chunks,
-            distances=[chunk.distance for chunk in chunks],
+            retrieved_ids=tuple(chunk.id for chunk in chunks),
+            retrieved_chunks=tuple(chunks),
+            distances=tuple(chunk.distance for chunk in chunks),
             context_payload=context_payload,
-            generation_messages=messages,
+            generation_messages=tuple(messages),
             answer=answer,
         )
 
