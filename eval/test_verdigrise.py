@@ -538,8 +538,13 @@ def test_prompt_builder_is_directly_callable_without_a_client(
     assert "`grimoire_id` verbatim" in messages[0].content
 
 
-def _capture_contract_record(metadata: dict[str, object] | None = None) -> RagRecord:
-    chunk = RetrievedChunk(
+def _capture_contract_chunk(
+    metadata: dict[str, object] | None = None,
+    *,
+    distance: float = 0.25,
+    similarity: float = 0.75,
+) -> RetrievedChunk:
+    return RetrievedChunk(
         id="verdigris-dose-verdant",
         text="Verbatim evidence.",
         metadata=metadata
@@ -548,9 +553,13 @@ def _capture_contract_record(metadata: dict[str, object] | None = None) -> RagRe
             "folio": 21,
             "audit": {"qualifiers": ["after dusk"]},
         },
-        distance=0.25,
-        similarity=0.75,
+        distance=distance,
+        similarity=similarity,
     )
+
+
+def _capture_contract_record(metadata: dict[str, object] | None = None) -> RagRecord:
+    chunk = _capture_contract_chunk(metadata)
     return RagRecord(
         question="What is the scoped fact?",
         retrieved_ids=[chunk.id],
@@ -563,6 +572,77 @@ def _capture_contract_record(metadata: dict[str, object] | None = None) -> RagRe
         ],
         answer="The scoped fact [verdigris-dose-verdant].",
     )
+
+
+@pytest.mark.parametrize(
+    ("distance", "similarity"),
+    [
+        pytest.param(0.0, 1.0, id="identical"),
+        pytest.param(1.0, 0.0, id="orthogonal"),
+        pytest.param(2.0, -1.0, id="opposite"),
+        pytest.param(0.1, 0.9, id="decimal-complement"),
+        pytest.param(0.25 + 5e-13, 0.75, id="within-absolute-tolerance"),
+    ],
+)
+def test_retrieved_chunk_accepts_valid_metric_pairs(distance: float, similarity: float) -> None:
+    chunk = _capture_contract_chunk(distance=distance, similarity=similarity)
+
+    assert chunk.distance == distance
+    assert chunk.similarity == similarity
+
+
+@pytest.mark.parametrize("field", ["distance", "similarity"])
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_retrieved_chunk_rejects_non_finite_metrics(field: str, value: float) -> None:
+    metrics = {"distance": 0.25, "similarity": 0.75}
+    metrics[field] = value
+
+    with pytest.raises(ValidationError) as error:
+        _capture_contract_chunk(**metrics)
+
+    assert any(detail["loc"] == (field,) for detail in error.value.errors())
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        pytest.param("distance", -1e-12, id="negative-distance"),
+        pytest.param("distance", 2.0 + 1e-12, id="distance-above-two"),
+        pytest.param("similarity", -1.0 - 1e-12, id="similarity-below-negative-one"),
+        pytest.param("similarity", 1.0 + 1e-12, id="similarity-above-one"),
+    ],
+)
+def test_retrieved_chunk_rejects_out_of_range_metrics(field: str, value: float) -> None:
+    metrics = {"distance": 0.25, "similarity": 0.75}
+    metrics[field] = value
+
+    with pytest.raises(ValidationError) as error:
+        _capture_contract_chunk(**metrics)
+
+    assert any(detail["loc"] == (field,) for detail in error.value.errors())
+
+
+@pytest.mark.parametrize(
+    "distance",
+    [
+        pytest.param(0.2, id="material-mismatch"),
+        pytest.param(0.25 + 2e-12, id="outside-absolute-tolerance"),
+    ],
+)
+def test_retrieved_chunk_rejects_inconsistent_metric_pair(distance: float) -> None:
+    with pytest.raises(ValidationError, match="distance must equal one minus similarity"):
+        _capture_contract_chunk(distance=distance, similarity=0.75)
+
+
+@pytest.mark.parametrize("field", ["distance", "similarity"])
+def test_retrieved_chunk_json_rejects_non_finite_metrics(field: str) -> None:
+    payload = _capture_contract_chunk().model_dump()
+    payload[field] = float("nan")
+
+    with pytest.raises(ValidationError) as error:
+        RetrievedChunk.model_validate_json(json.dumps(payload))
+
+    assert any(detail["loc"] == (field,) for detail in error.value.errors())
 
 
 @pytest.mark.parametrize(
@@ -730,6 +810,14 @@ def test_capture_model_copy_revalidates_updates() -> None:
         record.retrieved_chunks[0].model_copy(
             update={"metadata": {"mutable": SimpleNamespace(value=1)}}
         )
+    chunk = record.retrieved_chunks[0]
+    updated_chunk = chunk.model_copy(update={"distance": 0.5, "similarity": 0.5})
+    assert updated_chunk.distance == 0.5
+    assert updated_chunk.similarity == 0.5
+    with pytest.raises(ValidationError, match="distance must equal one minus similarity"):
+        chunk.model_copy(update={"distance": 0.5})
+    with pytest.raises(ValidationError):
+        chunk.model_copy(update={"similarity": float("nan")})
 
 
 def test_immutable_capture_supports_pickle_round_trip() -> None:
