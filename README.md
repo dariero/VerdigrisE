@@ -199,7 +199,7 @@ class RagRecord(BaseModel):
     answer: str
 ```
 
-The model validator rejects rank misalignment between `retrieved_ids`, `retrieved_chunks`, and `distances`. Rank-bearing sequences are immutable tuples, and nested metadata mappings and sequences are recursively read-only, so a valid capture cannot silently drift after construction. Metadata accepts only string-keyed mappings, ordered sequences, and JSON scalar leaves; unsupported mutable objects are rejected. Constructors continue to accept ordinary lists and dictionaries, updated model copies are revalidated, and `model_dump()` and `model_dump_json()` preserve the public array and object shapes.
+The model validators reject rank misalignment between `retrieved_ids`, `retrieved_chunks`, and `distances`. They also require each retrieval metric to be finite, constrain similarity to `[-1, 1]` and distance to `[0, 2]`, and enforce `distance = 1 - similarity` within an absolute `1e-12` tolerance without clamping or rewriting caller values. Rank-bearing sequences are immutable tuples, and nested metadata mappings and sequences are recursively read-only, so a valid capture cannot silently drift after construction. Metadata accepts only string-keyed mappings, ordered sequences, and JSON scalar leaves; unsupported mutable objects are rejected. Constructors continue to accept ordinary lists and dictionaries, updated model copies are revalidated, and `model_dump()` and `model_dump_json()` preserve the public array and object shapes.
 
 ```text
 raw corpus dictionary

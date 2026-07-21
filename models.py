@@ -2,7 +2,7 @@
 
 from collections.abc import Iterator, Mapping
 from copy import deepcopy
-from math import isfinite
+from math import isclose, isfinite
 from types import MappingProxyType
 from typing import Any, Literal, Self, override
 
@@ -99,8 +99,8 @@ class RetrievedChunk(_CaptureModel):
     id: str
     text: str
     metadata: Mapping[str, object]
-    distance: float
-    similarity: float
+    distance: float = Field(ge=0.0, le=2.0, allow_inf_nan=False)
+    similarity: float = Field(ge=-1.0, le=1.0, allow_inf_nan=False)
 
     @field_validator("metadata", mode="after")
     @classmethod
@@ -108,6 +108,17 @@ class RetrievedChunk(_CaptureModel):
         return _ImmutableMapping(
             {key: _freeze_metadata_value(value) for key, value in metadata.items()}
         )
+
+    @model_validator(mode="after")
+    def retrieval_metrics_must_match(self) -> RetrievedChunk:
+        if not isclose(
+            self.distance,
+            1.0 - self.similarity,
+            rel_tol=0.0,
+            abs_tol=1e-12,
+        ):
+            raise ValueError("distance must equal one minus similarity within 1e-12")
+        return self
 
     @field_serializer("metadata")
     def serialize_metadata(self, metadata: Mapping[str, object]) -> dict[str, object]:
