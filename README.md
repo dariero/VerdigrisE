@@ -324,7 +324,6 @@ RagaliQ's native pytest plugin supplies `rag_tester`, `ClaudeJudge`, retrying tr
     ├── __init__.py
     ├── conftest.py              # Flat-module import boundary
     ├── ragaliq_adapter.py       # Canned structural transport and case mapping
-    ├── test_dependency_submission.py  # Exact-lock snapshot contracts
     └── test_verdigrise.py       # Exact, provider-acceptance, and semantic tiers
 ```
 
