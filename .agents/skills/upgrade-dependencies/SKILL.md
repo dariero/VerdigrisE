@@ -7,12 +7,12 @@ description: "Update VerdigrisE dependencies while preserving its Python 3.14, h
 
 1. Read the installation and development sections of `README.md`, plus `pyproject.toml`, `uv.lock`, and `pylock.toml`.
 2. Inspect `git status --short --branch` and the current diffs for `pyproject.toml`, `uv.lock`, and `pylock.toml`; stop if unrelated work overlaps those files. Confirm the requested direct-dependency scope and target. Inspect the current constraint and locked version before editing. If the approved outcome is already satisfied, report a no-op; do not regenerate the lock merely to create a diff. A request to upgrade does not authorize adding or removing unrelated dependencies, changing Python support, or introducing new tooling.
-3. Record `uv --version` and run lock-generation commands through the generator version documented in `README.md`. The commands below use uv 0.11.28 explicitly. A uv-version change is separate tooling scope: update the CI pin, README generator-version statement, and skill commands together only when explicitly approved. Never delete the committed `uv.lock`.
+3. Record `uv --version` and run lock-generation commands through the generator version documented in `README.md`. The commands below use uv 0.11.30 explicitly. A uv-version change is separate tooling scope: update the CI version and archive checksum, README generator-version statement, and skill commands together only when explicitly approved. Never delete the committed `uv.lock`.
 4. Edit only the approved abstract requirement in `pyproject.toml`, preserving `requires-python = ">=3.14,<3.15"` unless a Python-policy change was explicitly approved.
 5. Update the committed solver state from the repository root. For an approved upgrade within an unchanged constraint, target only that package:
 
    ```bash
-   uvx --from uv==0.11.28 uv lock \
+   uvx --from uv==0.11.30 uv lock \
      --upgrade-package <package> \
      --python 3.14 \
      --prerelease disallow
@@ -21,7 +21,7 @@ description: "Update VerdigrisE dependencies while preserving its Python 3.14, h
    After an approved abstract requirement edit, retain existing lock preferences and resolve only required changes:
 
    ```bash
-   uvx --from uv==0.11.28 uv lock \
+   uvx --from uv==0.11.30 uv lock \
      --python 3.14 \
      --prerelease disallow
    ```
@@ -30,7 +30,7 @@ description: "Update VerdigrisE dependencies while preserving its Python 3.14, h
 6. Export the exact public-install contract from the committed solver state:
 
    ```bash
-   uvx --from uv==0.11.28 uv export \
+   uvx --from uv==0.11.30 uv export \
      --frozen \
      --format pylock.toml \
      --all-groups \
@@ -44,12 +44,12 @@ description: "Update VerdigrisE dependencies while preserving its Python 3.14, h
 7. Check the solver state and reproduce the public lock independently:
 
    ```bash
-   uvx --from uv==0.11.28 uv lock \
+   uvx --from uv==0.11.30 uv lock \
      --check \
      --python 3.14 \
      --prerelease disallow
    generated_dir="$(mktemp -d)"
-   uvx --from uv==0.11.28 uv export \
+   uvx --from uv==0.11.30 uv export \
      --frozen \
      --format pylock.toml \
      --all-groups \
