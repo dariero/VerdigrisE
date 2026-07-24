@@ -62,6 +62,8 @@ VerdigrisE does not load `.env` files. `OPENAI_API_KEY` owns live embedding and 
 
 > **Paid-call boundary:** Do not run a paid command without explicit approval. Every VerdigrisE-owned OpenAI client disables SDK retries with `max_retries=0` and applies a 120-second timeout to each network operation. That timeout is not a whole-command deadline, and a timed-out request may still be processed or billed. RagaliQ's `--ragaliq-cost-limit` is an approximate post-test guard based on recorded token counts, not a strict pre-spend cap.
 
+Before the corpus embedding request, ingestion rejects an existing index or generations target that is a symbolic link or not a directory. Save-time validation repeats these checks; the preflight cannot prevent later permission or capacity failures, or a target change between preflight and save.
+
 ---
 
 ## Quick Start

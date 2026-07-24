@@ -998,6 +998,103 @@ def test_index_detaches_nested_metadata_from_caller(tmp_path: Path) -> None:
     assert loaded.search(vector, top_k=1)[0].model_dump() == baseline_hit
 
 
+@pytest.mark.parametrize(
+    ("target_kind", "message"),
+    [
+        pytest.param(
+            "index-symlink",
+            "storage directory.*symbolic link",
+            id="index-symlink",
+        ),
+        pytest.param(
+            "index-dangling-symlink",
+            "storage directory.*symbolic link",
+            id="index-dangling-symlink",
+        ),
+        pytest.param(
+            "index-file",
+            "storage path.*real directory",
+            id="index-file",
+        ),
+        pytest.param(
+            "generations-symlink",
+            "storage directory.*symbolic link",
+            id="generations-symlink",
+        ),
+        pytest.param(
+            "generations-file",
+            "storage path.*real directory",
+            id="generations-file",
+        ),
+    ],
+)
+def test_unpaid_ingest_rejects_invalid_storage_before_embedding(
+    tmp_path: Path,
+    target_kind: str,
+    message: str,
+) -> None:
+    index_directory = tmp_path / "index"
+    if target_kind == "index-symlink":
+        outside_directory = tmp_path / "outside"
+        outside_directory.mkdir()
+        index_directory.symlink_to(outside_directory, target_is_directory=True)
+    elif target_kind == "index-dangling-symlink":
+        index_directory.symlink_to(tmp_path / "missing", target_is_directory=True)
+    elif target_kind == "index-file":
+        index_directory.write_text("not a directory", encoding="utf-8")
+    elif target_kind == "generations-symlink":
+        index_directory.mkdir()
+        outside_directory = tmp_path / "outside"
+        outside_directory.mkdir()
+        (index_directory / INDEX_GENERATIONS_DIRECTORY).symlink_to(
+            outside_directory,
+            target_is_directory=True,
+        )
+    elif target_kind == "generations-file":
+        index_directory.mkdir()
+        (index_directory / INDEX_GENERATIONS_DIRECTORY).write_text(
+            "not a directory",
+            encoding="utf-8",
+        )
+    else:
+        raise AssertionError(f"Unhandled target kind: {target_kind}")
+
+    embedder = FixedEmbeddingProvider()
+    with pytest.raises(ValueError, match=message):
+        ingest_corpus(embedder=embedder, output_directory=index_directory)
+
+    assert embedder.calls == []
+
+
+def test_ingest_storage_preflight_does_not_create_directories(
+    tmp_path: Path,
+) -> None:
+    index_directory = tmp_path / "parent" / "index"
+
+    class InspectingEmbeddingProvider:
+        model = EMBEDDING_MODEL
+
+        def embed(
+            self,
+            inputs: list[str],
+            *,
+            input_ids: list[str],
+            stage: str,
+            debug: bool = False,
+        ) -> np.ndarray:
+            del inputs, input_ids, stage, debug
+            assert not index_directory.exists()
+            raise RuntimeError("stop after storage preflight")
+
+    with pytest.raises(RuntimeError, match="stop after storage preflight"):
+        ingest_corpus(
+            embedder=InspectingEmbeddingProvider(),
+            output_directory=index_directory,
+        )
+
+    assert not index_directory.parent.exists()
+
+
 def test_unpaid_ingest_persists_a_reloadable_current_index(tmp_path: Path) -> None:
     embedder, index = _persist_fixed_index(tmp_path, debug=True)
     assert embedder.calls == [
