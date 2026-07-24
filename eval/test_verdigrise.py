@@ -282,7 +282,55 @@ def test_corpus_has_stable_identity_and_grimoire_citations() -> None:
     for entry in CORPUS:
         assert set(entry) >= {"id", "text", "grimoire_id", "folio"}
         assert entry["grimoire_id"] is not None or entry["folio"] is not None
+        assert entry["grimoire_id"] is None or entry["grimoire_id"].strip()
         assert entry["folio"] is None or isinstance(entry["folio"], (int, str))
+        assert not isinstance(entry["folio"], str) or entry["folio"].strip()
+
+
+def _entry_with_citation(
+    grimoire_id: str | None,
+    folio: int | str | None,
+) -> CorpusEntry:
+    return {
+        **CORPUS[0],
+        "grimoire_id": grimoire_id,
+        "folio": folio,
+    }
+
+
+@pytest.mark.parametrize(
+    ("grimoire_id", "folio", "message"),
+    [
+        pytest.param("", 21, "grimoire_id must be non-blank", id="empty-grimoire"),
+        pytest.param(" \t\n", 21, "grimoire_id must be non-blank", id="blank-grimoire"),
+        pytest.param("GRIM-VALID", "", "folio must be non-blank", id="empty-folio"),
+        pytest.param("GRIM-VALID", " \t\n", "folio must be non-blank", id="blank-folio"),
+    ],
+)
+def test_corpus_rejects_blank_citation_metadata(
+    grimoire_id: str | None,
+    folio: int | str | None,
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        validate_corpus([_entry_with_citation(grimoire_id, folio)])
+
+
+@pytest.mark.parametrize(
+    ("grimoire_id", "folio"),
+    [
+        pytest.param("GRIM-VALID", None, id="grimoire-only"),
+        pytest.param(None, 0, id="integer-folio-only"),
+        pytest.param(None, "IV-a", id="string-folio-only"),
+        pytest.param("  GRIM-VALID  ", None, id="padded-grimoire-only"),
+        pytest.param(None, "  IV-a  ", id="padded-string-folio-only"),
+    ],
+)
+def test_corpus_accepts_one_populated_citation_field(
+    grimoire_id: str | None,
+    folio: int | str | None,
+) -> None:
+    validate_corpus([_entry_with_citation(grimoire_id, folio)])
 
 
 def test_fixture_units_and_genuine_absence_are_explicit() -> None:
@@ -1582,6 +1630,35 @@ def test_index_load_rejects_changed_retrieval_policy(
 
 
 @pytest.mark.parametrize(
+    ("grimoire_id", "folio"),
+    [
+        pytest.param("GRIM-VALID", None, id="grimoire-only"),
+        pytest.param(None, 0, id="integer-folio-only"),
+        pytest.param(None, "IV-a", id="string-folio-only"),
+        pytest.param("  GRIM-VALID  ", None, id="padded-grimoire-only"),
+        pytest.param(None, "  IV-a  ", id="padded-string-folio-only"),
+    ],
+)
+def test_index_roundtrip_accepts_one_populated_citation_field(
+    tmp_path: Path,
+    grimoire_id: str | None,
+    folio: int | str | None,
+) -> None:
+    index = NumpyVectorIndex(dimension=1, embedding_model=EMBEDDING_MODEL)
+    index.index(
+        [_entry_with_citation(grimoire_id, folio)],
+        np.asarray([[1.0]], dtype=np.float32),
+    )
+    index.save(tmp_path)
+
+    loaded = NumpyVectorIndex.load(tmp_path)
+    chunk = loaded.search(np.asarray([1.0], dtype=np.float32), top_k=1)[0]
+
+    assert chunk.metadata["grimoire_id"] == grimoire_id
+    assert chunk.metadata["folio"] == folio
+
+
+@pytest.mark.parametrize(
     ("mutation", "message"),
     [
         pytest.param("not-list", "non-empty list", id="entries-not-list"),
@@ -1594,7 +1671,19 @@ def test_index_load_rejects_changed_retrieval_policy(
         pytest.param("metadata-not-object", "metadata is invalid", id="metadata-not-object"),
         pytest.param("missing-citation", "missing citation fields", id="missing-citation"),
         pytest.param("invalid-grimoire", "grimoire_id is invalid", id="invalid-grimoire"),
+        pytest.param(
+            "empty-grimoire",
+            "grimoire_id must be non-blank",
+            id="empty-grimoire",
+        ),
+        pytest.param(
+            "blank-grimoire",
+            "grimoire_id must be non-blank",
+            id="blank-grimoire",
+        ),
         pytest.param("invalid-folio", "folio is invalid", id="invalid-folio"),
+        pytest.param("empty-folio", "folio must be non-blank", id="empty-folio"),
+        pytest.param("blank-folio", "folio must be non-blank", id="blank-folio"),
         pytest.param("no-citation", "no citation metadata", id="no-citation"),
     ],
 )
@@ -1632,8 +1721,16 @@ def test_index_load_rejects_invalid_entries(tmp_path: Path, mutation: str, messa
                 metadata.pop("folio")
             elif mutation == "invalid-grimoire":
                 metadata["grimoire_id"] = 1
+            elif mutation == "empty-grimoire":
+                metadata["grimoire_id"] = ""
+            elif mutation == "blank-grimoire":
+                metadata["grimoire_id"] = " \t\n"
             elif mutation == "invalid-folio":
                 metadata["folio"] = True
+            elif mutation == "empty-folio":
+                metadata["folio"] = ""
+            elif mutation == "blank-folio":
+                metadata["folio"] = " \t\n"
             elif mutation == "no-citation":
                 metadata["grimoire_id"] = None
                 metadata["folio"] = None
