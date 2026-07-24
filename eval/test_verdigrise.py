@@ -2228,6 +2228,30 @@ def test_stale_embedding_model_is_rejected_before_provider_initialization(
         pipeline_module._real_pipeline(index_directory=tmp_path)
 
 
+def test_public_ask_delegates_to_the_default_real_pipeline(
+    records: dict[str, RagRecord],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = GOLDEN_BY_ID["numeric-source-verdigris-dose"]
+    expected_record = records[case.case_id]
+    build_calls: list[None] = []
+    asked_questions: list[str] = []
+
+    def ask_question(question: str) -> RagRecord:
+        asked_questions.append(question)
+        return expected_record
+
+    def build_pipeline() -> object:
+        build_calls.append(None)
+        return SimpleNamespace(ask=ask_question)
+
+    monkeypatch.setattr(pipeline_module, "_real_pipeline", build_pipeline)
+
+    assert pipeline_module.ask(case.question) == expected_record
+    assert build_calls == [None]
+    assert asked_questions == [case.question]
+
+
 def test_real_client_uses_exact_bounded_policy(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "unit-test-placeholder")
     client = object()
@@ -2436,6 +2460,68 @@ class _FakeCompletionsEndpoint:
 
 def _fake_generation_client(endpoint: _FakeCompletionsEndpoint) -> SimpleNamespace:
     return SimpleNamespace(chat=SimpleNamespace(completions=endpoint))
+
+
+def test_cli_ask_runs_the_persisted_pipeline_without_provider_calls(
+    tmp_path: Path,
+    records: dict[str, RagRecord],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: Any,
+) -> None:
+    case = GOLDEN_BY_ID["numeric-source-verdigris-dose"]
+    _persist_fixed_index(tmp_path)
+    embedding_endpoint = _FakeEmbeddingsEndpoint(
+        [
+            SimpleNamespace(
+                index=0,
+                embedding=_QUESTION_VECTORS_BY_CASE_ID[case.case_id],
+            )
+        ]
+    )
+    completion_endpoint = _FakeCompletionsEndpoint(case.expected_answer)
+    client = SimpleNamespace(
+        embeddings=embedding_endpoint,
+        chat=SimpleNamespace(completions=completion_endpoint),
+    )
+    monkeypatch.setattr(pipeline_module, "_real_client", lambda: client)
+
+    assert (
+        pipeline_module.main(
+            [
+                "ask",
+                case.question,
+                "--index-dir",
+                str(tmp_path),
+                "--debug",
+            ]
+        )
+        == 0
+    )
+
+    output_lines = capsys.readouterr().out.splitlines()
+    debug_output = output_lines[0]
+    vector_dimension = len(_QUESTION_VECTORS_BY_CASE_ID[case.case_id])
+    assert "verdigrise_embedding_debug" in debug_output
+    assert "stage=query" in debug_output
+    assert f"model={EMBEDDING_MODEL}" in debug_output
+    assert "input_count=1" in debug_output
+    assert f"dimensions={vector_dimension}" in debug_output
+    assert f"shape=(1, {vector_dimension})" in debug_output
+    assert "ids=['<query>']" in debug_output
+    assert case.question not in debug_output
+    record = RagRecord.model_validate_json("\n".join(output_lines[1:]))
+    assert record.model_dump() == records[case.case_id].model_dump()
+    assert embedding_endpoint.kwargs == {
+        "model": EMBEDDING_MODEL,
+        "input": [case.question],
+        "encoding_format": "float",
+    }
+    assert completion_endpoint.kwargs == {
+        "model": GENERATION_MODEL,
+        "temperature": GENERATION_TEMPERATURE,
+        "max_completion_tokens": 300,
+        "messages": [message.model_dump() for message in records[case.case_id].generation_messages],
+    }
 
 
 def test_real_generation_adapter_preserves_structured_text_and_citations() -> None:
