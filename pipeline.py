@@ -290,8 +290,10 @@ class NumpyVectorIndex:
         finally:
             os.close(descriptor)
 
-    @classmethod
-    def _ensure_directory(cls, directory: Path) -> None:
+    @staticmethod
+    def _validate_directory_target(directory: Path) -> list[Path]:
+        """Validate existing path components and return directories not yet created."""
+
         missing_directories: list[Path] = []
         current = directory
         while not current.exists():
@@ -301,7 +303,20 @@ class NumpyVectorIndex:
             current = current.parent
         if current.is_symlink():
             raise ValueError(f"Index storage directory must not be a symbolic link: {current}")
+        if not current.is_dir():
+            raise ValueError(f"Index storage path must be a real directory: {current}")
+        return missing_directories
 
+    @classmethod
+    def _preflight_storage(cls, directory: Path) -> None:
+        """Reject structurally invalid storage targets without creating directories."""
+
+        cls._validate_directory_target(directory)
+        cls._validate_directory_target(directory / INDEX_GENERATIONS_DIRECTORY)
+
+    @classmethod
+    def _ensure_directory(cls, directory: Path) -> None:
+        missing_directories = cls._validate_directory_target(directory)
         directory.mkdir(parents=True, exist_ok=True)
         if directory.is_symlink() or not directory.is_dir():
             raise ValueError(f"Index storage path must be a real directory: {directory}")
@@ -660,6 +675,7 @@ def ingest_corpus(
     """Run stages 1 and 2 for the corpus, then persist the validated index."""
 
     validate_corpus()
+    NumpyVectorIndex._preflight_storage(output_directory)
     texts = [entry["text"] for entry in CORPUS]
     ids = [entry["id"] for entry in CORPUS]
     vectors = embedder.embed(
