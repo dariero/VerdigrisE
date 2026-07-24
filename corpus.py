@@ -394,13 +394,18 @@ def validate_corpus(entries: list[CorpusEntry] = CORPUS) -> None:
         ids.add(entry["id"])
         if not isinstance(entry["text"], str) or not entry["text"]:
             raise ValueError(f"Corpus text is empty for {entry['id']}")
-        if entry["grimoire_id"] is None and entry["folio"] is None:
-            raise ValueError(f"Corpus entry {entry['id']} has no citation metadata")
-        if entry["grimoire_id"] is not None and not isinstance(entry["grimoire_id"], str):
-            raise ValueError(f"Corpus grimoire_id must be a str or None for {entry['id']}")
+        grimoire_id = entry["grimoire_id"]
         folio = entry["folio"]
+        if grimoire_id is None and folio is None:
+            raise ValueError(f"Corpus entry {entry['id']} has no citation metadata")
+        if grimoire_id is not None and not isinstance(grimoire_id, str):
+            raise ValueError(f"Corpus grimoire_id must be a str or None for {entry['id']}")
+        if isinstance(grimoire_id, str) and not grimoire_id.strip():
+            raise ValueError(f"Corpus grimoire_id must be non-blank for {entry['id']}")
         if folio is not None and (isinstance(folio, bool) or not isinstance(folio, (int, str))):
             raise ValueError(f"Corpus folio must be an int, str, or None for {entry['id']}")
+        if isinstance(folio, str) and not folio.strip():
+            raise ValueError(f"Corpus folio must be non-blank for {entry['id']}")
         for key in ("subject", "fact_type", "condition"):
             if not isinstance(entry[key], str) or not entry[key]:
                 raise ValueError(f"Corpus {key} must be a non-empty str for {entry['id']}")

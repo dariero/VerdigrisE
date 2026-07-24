@@ -248,8 +248,12 @@ class NumpyVectorIndex:
             folio = metadata.get("folio")
             if grimoire_id is not None and not isinstance(grimoire_id, str):
                 raise ValueError(f"Indexed grimoire_id is invalid for {chunk_id}")
+            if isinstance(grimoire_id, str) and not grimoire_id.strip():
+                raise ValueError(f"Indexed grimoire_id must be non-blank for {chunk_id}")
             if folio is not None and (isinstance(folio, bool) or not isinstance(folio, (int, str))):
                 raise ValueError(f"Indexed folio is invalid for {chunk_id}")
+            if isinstance(folio, str) and not folio.strip():
+                raise ValueError(f"Indexed folio must be non-blank for {chunk_id}")
             if grimoire_id is None and folio is None:
                 raise ValueError(f"Indexed entry has no citation metadata: {chunk_id}")
         return cast(list[_IndexEntry], entries)
