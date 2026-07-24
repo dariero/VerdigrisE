@@ -111,13 +111,13 @@ _CORPUS_VECTORS: dict[str, list[float]] = {
     "sunspire-orchid-harvest": [0, 0, 0, 0, 0, 0, 0, 4, 0, 3, 0, 0],
     "asterquartz-powdering": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0],
 }
-_QUESTION_VECTORS: dict[str, list[float]] = {
-    GOLDEN_BY_ID["numeric-source-verdigris-dose"].question: [4, 4, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    GOLDEN_BY_ID["numeric-source-amber-dose"].question: [4, 0, 4, 1, 0, 0, 0, 0, 0, 0, 0, 0],
-    GOLDEN_BY_ID["numeric-source-obsidian-dose"].question: [4, 1, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0],
-    GOLDEN_BY_ID["near-synonym-moonpetal-vapor"].question: [0, 0, 0, 0, 4, 4, 1, 0, 0, 0, 0, 0],
-    GOLDEN_BY_ID["conditional-shadeglass-harvest"].question: [0, 0, 0, 0, 0, 0, 0, 4, 4, 1, 0, 0],
-    GOLDEN_BY_ID["conditional-shadeglass-direct-sun"].question: [
+_QUESTION_VECTORS_BY_CASE_ID: dict[str, list[float]] = {
+    "numeric-source-verdigris-dose": [4, 4, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    "numeric-source-amber-dose": [4, 0, 4, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+    "numeric-source-obsidian-dose": [4, 1, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0],
+    "near-synonym-moonpetal-vapor": [0, 0, 0, 0, 4, 4, 1, 0, 0, 0, 0, 0],
+    "conditional-shadeglass-harvest": [0, 0, 0, 0, 0, 0, 0, 4, 4, 1, 0, 0],
+    "conditional-shadeglass-direct-sun": [
         0,
         0,
         0,
@@ -131,8 +131,10 @@ _QUESTION_VECTORS: dict[str, list[float]] = {
         0,
         0,
     ],
-    GOLDEN_BY_ID["absent-moonpetal-dew-shelf-life"].question: [0, 0, 0, 0, 4, 1, 0, 0, 0, 0, 0, 4],
+    "absent-moonpetal-dew-shelf-life": [0, 0, 0, 0, 4, 1, 0, 0, 0, 0, 0, 4],
 }
+_CORPUS_TEXT_BY_ID = {entry["id"]: entry["text"] for entry in CORPUS}
+_CASE_ID_BY_QUESTION = {case.question: case.case_id for case in GOLDEN}
 
 
 class FixedEmbeddingProvider:
@@ -141,9 +143,6 @@ class FixedEmbeddingProvider:
     model = EMBEDDING_MODEL
 
     def __init__(self) -> None:
-        self._vectors_by_text = {
-            entry["text"]: _CORPUS_VECTORS[entry["id"]] for entry in CORPUS
-        } | _QUESTION_VECTORS
         self.calls: list[tuple[list[str], list[str], str, bool]] = []
 
     def embed(
@@ -155,10 +154,27 @@ class FixedEmbeddingProvider:
         debug: bool = False,
     ) -> np.ndarray:
         self.calls.append((list(inputs), list(input_ids), stage, debug))
+        if not inputs or len(inputs) != len(input_ids):
+            raise AssertionError(
+                "Fixed embedding inputs and ids must be non-empty and rank-aligned"
+            )
         try:
-            return np.asarray([self._vectors_by_text[text] for text in inputs], dtype=np.float32)
+            if stage == "corpus":
+                for input_text, input_id in zip(inputs, input_ids, strict=True):
+                    if input_text != _CORPUS_TEXT_BY_ID[input_id]:
+                        raise AssertionError(f"Corpus text does not match stable id: {input_id!r}")
+                lookup_keys = input_ids
+                vectors_by_key = _CORPUS_VECTORS
+            elif stage == "query":
+                lookup_keys = [_CASE_ID_BY_QUESTION[question] for question in inputs]
+                vectors_by_key = _QUESTION_VECTORS_BY_CASE_ID
+            else:
+                raise AssertionError(f"Unsupported fixed embedding stage: {stage!r}")
+            return np.asarray([vectors_by_key[key] for key in lookup_keys], dtype=np.float32)
         except KeyError as exc:
-            raise AssertionError(f"No fixed vector for input: {exc.args[0]!r}") from exc
+            raise AssertionError(
+                f"No fixed fixture mapping for {stage} lookup key: {exc.args[0]!r}"
+            ) from exc
 
 
 def _persist_fixed_index(
@@ -282,6 +298,80 @@ def deterministic_pipeline() -> RagPipeline:
 @pytest.fixture(scope="session")
 def records(deterministic_pipeline: RagPipeline) -> dict[str, RagRecord]:
     return {case.case_id: deterministic_pipeline.ask(case.question) for case in GOLDEN}
+
+
+def test_fixed_vectors_are_exactly_coupled_to_fixture() -> None:
+    corpus_ids = {entry["id"] for entry in CORPUS}
+    case_ids = [case.case_id for case in GOLDEN]
+    questions = [case.question for case in GOLDEN]
+
+    assert len(case_ids) == len(set(case_ids))
+    assert len(questions) == len(set(questions))
+    assert set(_CORPUS_VECTORS) == corpus_ids
+    assert set(_QUESTION_VECTORS_BY_CASE_ID) == set(case_ids)
+
+    dimensions = {
+        len(vector)
+        for vector in [*_CORPUS_VECTORS.values(), *_QUESTION_VECTORS_BY_CASE_ID.values()]
+    }
+    assert len(dimensions) == 1
+    assert next(iter(dimensions)) > 0
+
+
+def test_golden_retrieval_references_are_internally_consistent() -> None:
+    corpus_ids = {entry["id"] for entry in CORPUS}
+
+    for case in GOLDEN:
+        ranked_ids = case.expected_ranked_ids
+        sibling_ids = case.collision_sibling_ids
+        assert len(ranked_ids) == TOP_K
+        assert len(ranked_ids) == len(set(ranked_ids))
+        assert set(ranked_ids).issubset(corpus_ids)
+        assert case.expected_retrieved_id is None or case.expected_retrieved_id in ranked_ids
+        assert len(sibling_ids) == len(set(sibling_ids))
+        assert set(sibling_ids).issubset(ranked_ids)
+        assert case.expected_retrieved_id not in sibling_ids
+
+
+def test_fixed_embedding_provider_uses_stable_ids_for_reordered_corpus_rows() -> None:
+    entries = [CORPUS[3], CORPUS[0]]
+    input_ids = [entry["id"] for entry in entries]
+    matrix = FixedEmbeddingProvider().embed(
+        [entry["text"] for entry in entries],
+        input_ids=input_ids,
+        stage="corpus",
+    )
+
+    np.testing.assert_array_equal(
+        matrix,
+        np.asarray([_CORPUS_VECTORS[input_id] for input_id in input_ids], dtype=np.float32),
+    )
+
+
+@pytest.mark.parametrize(
+    ("inputs", "input_ids", "message"),
+    [
+        pytest.param(
+            [CORPUS[0]["text"]],
+            [CORPUS[0]["id"], CORPUS[1]["id"]],
+            "non-empty and rank-aligned",
+            id="rank-mismatch",
+        ),
+        pytest.param(
+            [CORPUS[0]["text"]],
+            [CORPUS[1]["id"]],
+            "Corpus text does not match stable id",
+            id="identity-mismatch",
+        ),
+    ],
+)
+def test_fixed_embedding_provider_rejects_misaligned_corpus_identity(
+    inputs: list[str],
+    input_ids: list[str],
+    message: str,
+) -> None:
+    with pytest.raises(AssertionError, match=message):
+        FixedEmbeddingProvider().embed(inputs, input_ids=input_ids, stage="corpus")
 
 
 def test_corpus_has_stable_identity_and_grimoire_citations() -> None:
@@ -1284,7 +1374,7 @@ def test_unpaid_ingest_persists_a_reloadable_current_index(tmp_path: Path) -> No
         == vector_path.read_bytes()
     )
     case = GOLDEN_BY_ID["numeric-source-verdigris-dose"]
-    hits = loaded.search(np.asarray(_QUESTION_VECTORS[case.question], dtype=np.float32))
+    hits = loaded.search(np.asarray(_QUESTION_VECTORS_BY_CASE_ID[case.case_id], dtype=np.float32))
     assert [hit.id for hit in hits] == case.expected_ranked_ids
     assert hits[0].metadata["grimoire_id"] == "GRIM-VERDANT"
     assert hits[0].metadata["folio"] == 21
