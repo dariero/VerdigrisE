@@ -381,19 +381,22 @@ GOLDEN_CASES: list[GoldenCaseFixture] = [
 def validate_corpus(entries: list[CorpusEntry] = CORPUS) -> None:
     """Fail early if fixture identity, citation, or evaluation metadata drifts."""
 
+    if not entries:
+        raise ValueError("Corpus must contain at least one entry")
+
     ids: set[str] = set()
     required = {"id", "text", "grimoire_id", "folio", "subject", "fact_type", "condition"}
     for entry in entries:
         missing = required.difference(entry)
         if missing:
             raise ValueError(f"Corpus entry is missing fields: {sorted(missing)}")
-        if not isinstance(entry["id"], str) or not entry["id"]:
-            raise ValueError("Corpus id must be a non-empty string")
+        if not isinstance(entry["id"], str) or not entry["id"].strip():
+            raise ValueError("Corpus id must be a non-blank string")
         if entry["id"] in ids:
             raise ValueError(f"Duplicate corpus id: {entry['id']}")
         ids.add(entry["id"])
-        if not isinstance(entry["text"], str) or not entry["text"]:
-            raise ValueError(f"Corpus text is empty for {entry['id']}")
+        if not isinstance(entry["text"], str) or not entry["text"].strip():
+            raise ValueError(f"Corpus text must be a non-blank string for {entry['id']}")
         grimoire_id = entry["grimoire_id"]
         folio = entry["folio"]
         if grimoire_id is None and folio is None:
@@ -407,8 +410,8 @@ def validate_corpus(entries: list[CorpusEntry] = CORPUS) -> None:
         if isinstance(folio, str) and not folio.strip():
             raise ValueError(f"Corpus folio must be non-blank for {entry['id']}")
         for key in ("subject", "fact_type", "condition"):
-            if not isinstance(entry[key], str) or not entry[key]:
-                raise ValueError(f"Corpus {key} must be a non-empty str for {entry['id']}")
+            if not isinstance(entry[key], str) or not entry[key].strip():
+                raise ValueError(f"Corpus {key} must be a non-blank string for {entry['id']}")
 
 
 validate_corpus()

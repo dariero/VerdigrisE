@@ -295,15 +295,137 @@ def test_corpus_has_stable_identity_and_grimoire_citations() -> None:
         assert not isinstance(entry["folio"], str) or entry["folio"].strip()
 
 
+def _entry_with_updates(**updates: object) -> CorpusEntry:
+    return cast(CorpusEntry, {**CORPUS[0], **updates})
+
+
 def _entry_with_citation(
     grimoire_id: str | None,
     folio: int | str | None,
 ) -> CorpusEntry:
-    return {
-        **CORPUS[0],
-        "grimoire_id": grimoire_id,
-        "folio": folio,
+    return _entry_with_updates(grimoire_id=grimoire_id, folio=folio)
+
+
+def test_corpus_rejects_empty_fixture() -> None:
+    with pytest.raises(ValueError, match="Corpus must contain at least one entry"):
+        validate_corpus([])
+
+
+def test_corpus_rejects_missing_required_field() -> None:
+    entry = dict(CORPUS[0])
+    del entry["condition"]
+    with pytest.raises(ValueError, match=r"missing fields: \['condition'\]"):
+        validate_corpus([cast(CorpusEntry, entry)])
+
+
+def test_corpus_rejects_duplicate_ids() -> None:
+    entry = _entry_with_updates(id="duplicate-id")
+    with pytest.raises(ValueError, match="Duplicate corpus id: duplicate-id"):
+        validate_corpus([entry, entry])
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "message"),
+    [
+        pytest.param("id", None, "id must be a non-blank string", id="id-type"),
+        pytest.param("id", "", "id must be a non-blank string", id="id-empty"),
+        pytest.param("id", " \t\n", "id must be a non-blank string", id="id-blank"),
+        pytest.param("text", None, "text must be a non-blank string", id="text-type"),
+        pytest.param("text", "", "text must be a non-blank string", id="text-empty"),
+        pytest.param("text", " \t\n", "text must be a non-blank string", id="text-blank"),
+        pytest.param("subject", None, "subject must be a non-blank string", id="subject-type"),
+        pytest.param("subject", "", "subject must be a non-blank string", id="subject-empty"),
+        pytest.param(
+            "subject",
+            " \t\n",
+            "subject must be a non-blank string",
+            id="subject-blank",
+        ),
+        pytest.param(
+            "fact_type",
+            None,
+            "fact_type must be a non-blank string",
+            id="fact-type-type",
+        ),
+        pytest.param(
+            "fact_type",
+            "",
+            "fact_type must be a non-blank string",
+            id="fact-type-empty",
+        ),
+        pytest.param(
+            "fact_type",
+            " \t\n",
+            "fact_type must be a non-blank string",
+            id="fact-type-blank",
+        ),
+        pytest.param(
+            "condition",
+            None,
+            "condition must be a non-blank string",
+            id="condition-type",
+        ),
+        pytest.param(
+            "condition",
+            "",
+            "condition must be a non-blank string",
+            id="condition-empty",
+        ),
+        pytest.param(
+            "condition",
+            " \t\n",
+            "condition must be a non-blank string",
+            id="condition-blank",
+        ),
+    ],
+)
+def test_corpus_rejects_invalid_required_strings(
+    key: str,
+    value: object,
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        validate_corpus([_entry_with_updates(**{key: value})])
+
+
+@pytest.mark.parametrize(
+    ("updates", "message"),
+    [
+        pytest.param(
+            {"grimoire_id": None, "folio": None},
+            "no citation metadata",
+            id="no-citation",
+        ),
+        pytest.param(
+            {"grimoire_id": 7},
+            "grimoire_id must be a str or None",
+            id="grimoire-type",
+        ),
+        pytest.param({"folio": True}, "folio must be an int, str, or None", id="folio-bool"),
+        pytest.param({"folio": 1.5}, "folio must be an int, str, or None", id="folio-type"),
+    ],
+)
+def test_corpus_rejects_invalid_citation_shapes(
+    updates: dict[str, object],
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        validate_corpus([_entry_with_updates(**updates)])
+
+
+def test_corpus_validation_preserves_padded_required_strings() -> None:
+    values = {
+        "id": "  padded-id  ",
+        "text": "  Verbatim evidence.  ",
+        "subject": "  padded subject  ",
+        "fact_type": "  padded fact type  ",
+        "condition": "  padded condition  ",
     }
+    entry = _entry_with_updates(**values)
+
+    validate_corpus([entry])
+
+    assert {key: entry[key] for key in values} == values
 
 
 @pytest.mark.parametrize(

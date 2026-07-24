@@ -156,7 +156,7 @@ The corpus is a Python fixture, not a document-loader output:
 }
 ```
 
-Every entry has a stable id, verbatim text, `grimoire_id`, `folio`, subject, fact type, and condition. At least one citation field must be populated. Either field may be `None`, but not both; every supplied string citation value must contain a non-whitespace character, and `folio` may also be an integer.
+The corpus must contain at least one entry. Every entry has a stable id, verbatim text, `grimoire_id`, `folio`, subject, fact type, and condition. The id, text, subject, fact type, and condition must each contain a non-whitespace character; validation checks presence without trimming or normalizing the stored values. At least one citation field must be populated. Either field may be `None`, but not both; every supplied string citation value must contain a non-whitespace character, and `folio` may also be an integer.
 
 ### Golden Cases
 
