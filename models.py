@@ -43,9 +43,9 @@ class _ImmutableMapping[Key, Value](Mapping[Key, Value]):
 
 
 class _CaptureModel(BaseModel):
-    """Frozen base that revalidates any explicitly updated copy."""
+    """Frozen, closed base that revalidates any explicitly updated copy."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     @override
     def model_copy(
