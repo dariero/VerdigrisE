@@ -22,7 +22,7 @@ import numpy as np
 import pytest
 from pydantic import BaseModel, ConfigDict, ValidationError
 from ragaliq import RAGTestResult
-from ragaliq.judges import DEFAULT_JUDGE_MODEL
+from ragaliq.judges import DEFAULT_JUDGE_MODEL, TransportResponse
 
 import pipeline as pipeline_module
 from config import (
@@ -2570,6 +2570,49 @@ def test_ragaliq_canned_runner_executes_structural_wiring_locally(
         (False, True, False),
         (True, True, False),
     ]
+
+
+def test_ragaliq_canned_runner_marks_below_threshold_relevance_as_failed(
+    records: dict[str, RagRecord],
+) -> None:
+    class _LowRelevanceTransport(CannedJudgeTransport):
+        async def send(
+            self,
+            system_prompt: str,
+            user_prompt: str,
+            model: str = DEFAULT_JUDGE_MODEL,
+            temperature: float = 0.0,
+            max_tokens: int = 1024,
+        ) -> TransportResponse:
+            response = await super().send(
+                system_prompt,
+                user_prompt,
+                model,
+                temperature,
+                max_tokens,
+            )
+            if "score" not in json.loads(response.text):
+                return response
+            return TransportResponse(
+                text=json.dumps(
+                    {
+                        "score": 0.6,
+                        "reasoning": "The response is only partly relevant.",
+                    }
+                ),
+                input_tokens=response.input_tokens,
+                output_tokens=response.output_tokens,
+                model=response.model,
+            )
+
+    case = GOLDEN_BY_ID["numeric-source-verdigris-dose"]
+    test_case = to_ragaliq_case(records[case.case_id], case_id=case.case_id)
+    runner = build_ragaliq_runner(_LowRelevanceTransport())
+    result = runner.evaluate(test_case)
+    assert result.status.value == "failed"
+    assert result.passed is False
+    assert result.scores == {"faithfulness": 1.0, "relevance": 0.6}
+    assert result.test_case == test_case
 
 
 def _marked_item(*markers: str) -> Any:
