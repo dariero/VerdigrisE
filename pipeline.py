@@ -19,6 +19,7 @@ import os
 import uuid
 from collections.abc import Sequence
 from contextlib import suppress
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Protocol, TypedDict, cast
 
@@ -213,9 +214,9 @@ class NumpyVectorIndex:
             {
                 "id": entry["id"],
                 "text": entry["text"],
-                "metadata": {
-                    key: value for key, value in entry.items() if key not in {"id", "text"}
-                },
+                "metadata": deepcopy(
+                    {key: value for key, value in entry.items() if key not in {"id", "text"}}
+                ),
             }
             for entry in entries
         ]

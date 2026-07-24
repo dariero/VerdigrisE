@@ -334,7 +334,7 @@ The four pipeline stages are:
 3. Build the exact citation-labelled context and generation messages.
 4. Generate without rewriting the response and capture every stage in `RagRecord`.
 
-Deterministic query tests construct `NumpyVectorIndex` in memory. Free integrity tests also run ingestion, persist and reload the index, and prove that wrong-dtype, non-finite, zero, non-unit, fingerprint-mismatched, fixture-stale, and configured-model-stale state is rejected before provider initialization. Persisted rows must already use the `float32` dtype and have unit length within an absolute `1e-5` tolerance; loading validates the fingerprinted representation directly instead of casting or renormalizing it. CLI `ingest` publishes under `.index/`; CLI `ask` resolves and validates the active generation.
+Deterministic query tests construct `NumpyVectorIndex` in memory. After `index()` returns, the index owns a recursive snapshot of caller-supplied metadata; later caller mutations cannot change its fingerprint, retrieval captures, or saved manifest. Free integrity tests also run ingestion, persist and reload the index, and prove that wrong-dtype, non-finite, zero, non-unit, fingerprint-mismatched, fixture-stale, and configured-model-stale state is rejected before provider initialization. Persisted rows must already use the `float32` dtype and have unit length within an absolute `1e-5` tolerance; loading validates the fingerprinted representation directly instead of casting or renormalizing it. CLI `ingest` publishes under `.index/`; CLI `ask` resolves and validates the active generation.
 
 ```text
 .index/

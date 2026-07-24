@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Barrier, Event
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -969,6 +969,33 @@ def test_finite_float32_extremes_normalize_without_collapsing(
     assert hits[0].similarity == pytest.approx(1.0, abs=1e-5)
     assert 0.0 <= hits[0].distance < 1e-5
     assert hits[0].distance == 1.0 - hits[0].similarity
+
+
+def test_index_detaches_nested_metadata_from_caller(tmp_path: Path) -> None:
+    qualifiers = ["after dusk"]
+    audit: dict[str, object] = {"qualifiers": qualifiers}
+    entry = cast(CorpusEntry, {**CORPUS[0], "audit": audit})
+    index = NumpyVectorIndex(dimension=1, embedding_model=EMBEDDING_MODEL)
+    vector = np.asarray([1.0], dtype=np.float32)
+    index.index([entry], vector[None, :])
+    baseline_digest = index.indexed_corpus_sha256
+    baseline_hit = index.search(vector, top_k=1)[0].model_dump()
+
+    qualifiers.append("at dawn")
+    audit["unexpected"] = True
+
+    assert entry["audit"] == {
+        "qualifiers": ["after dusk", "at dawn"],
+        "unexpected": True,
+    }
+    assert index.indexed_corpus_sha256 == baseline_digest
+    assert index.search(vector, top_k=1)[0].model_dump() == baseline_hit
+
+    index.save(tmp_path)
+    loaded = NumpyVectorIndex.load(tmp_path)
+
+    assert loaded.indexed_corpus_sha256 == baseline_digest
+    assert loaded.search(vector, top_k=1)[0].model_dump() == baseline_hit
 
 
 def test_unpaid_ingest_persists_a_reloadable_current_index(tmp_path: Path) -> None:
