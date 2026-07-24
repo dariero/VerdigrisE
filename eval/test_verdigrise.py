@@ -623,6 +623,42 @@ def _capture_contract_record(metadata: dict[str, object] | None = None) -> RagRe
 
 
 @pytest.mark.parametrize(
+    "capture_kind",
+    ["retrieved-chunk", "prompt-message", "rag-record"],
+)
+def test_capture_models_reject_unknown_fields(capture_kind: str) -> None:
+    captures: dict[str, BaseModel] = {
+        "retrieved-chunk": _capture_contract_chunk(),
+        "prompt-message": PromptMessage(role="system", content="Use only context."),
+        "rag-record": _capture_contract_record(),
+    }
+    capture = captures[capture_kind]
+    payload = capture.model_dump()
+    payload["unexpected_capture_field"] = "must not be discarded"
+
+    with pytest.raises(ValidationError) as error:
+        type(capture).model_validate(payload)
+
+    assert error.value.errors()[0]["loc"] == ("unexpected_capture_field",)
+    assert error.value.errors()[0]["type"] == "extra_forbidden"
+
+
+def test_rag_record_json_rejects_unknown_nested_capture_fields() -> None:
+    payload = _capture_contract_record().model_dump()
+    payload["retrieved_chunks"][0]["unexpected_chunk_field"] = "must not be discarded"
+    payload["generation_messages"][0]["unexpected_message_field"] = "must not be discarded"
+
+    with pytest.raises(ValidationError) as error:
+        RagRecord.model_validate_json(json.dumps(payload))
+
+    errors = {(detail["loc"], detail["type"]) for detail in error.value.errors()}
+    assert errors == {
+        (("retrieved_chunks", 0, "unexpected_chunk_field"), "extra_forbidden"),
+        (("generation_messages", 0, "unexpected_message_field"), "extra_forbidden"),
+    }
+
+
+@pytest.mark.parametrize(
     ("distance", "similarity"),
     [
         pytest.param(0.0, 1.0, id="identical"),
@@ -866,6 +902,10 @@ def test_capture_model_copy_revalidates_updates() -> None:
         chunk.model_copy(update={"distance": 0.5})
     with pytest.raises(ValidationError):
         chunk.model_copy(update={"similarity": float("nan")})
+    with pytest.raises(ValidationError) as error:
+        record.model_copy(update={"anser": "Misspelled answer must not be discarded."})
+    assert error.value.errors()[0]["loc"] == ("anser",)
+    assert error.value.errors()[0]["type"] == "extra_forbidden"
 
 
 def test_immutable_capture_supports_pickle_round_trip() -> None:
