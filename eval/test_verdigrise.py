@@ -90,6 +90,14 @@ COLLISION_CASES = [case for case in ANSWERABLE if case.collision_sibling_ids]
 QUALIFIED_CASES = [case for case in ANSWERABLE if case.required_qualifiers]
 DOSAGE_CASES = [case for case in GOLDEN if case.case_id.startswith("numeric-source-")]
 
+_EXPECTED_SYSTEM_INSTRUCTIONS = """Answer only from the supplied CONTEXT blocks.
+Do not use outside knowledge or infer an unstated value.
+For every supported statement, cite the supporting stable chunk id in square
+brackets, for example [verdigris-dose-verdant].
+Context labels provide `grimoire_id` and `folio`. Repeat the supporting
+`grimoire_id` verbatim in every supported answer.
+If the answer is unsupported, return exactly INSUFFICIENT_CONTEXT and nothing else."""
+
 
 # Dimensions isolate the dosage, vapor, harvest, hardness, and absent-query
 # families while forcing each declared sibling to rank second without a tie.
@@ -491,10 +499,14 @@ def test_value_only_answer_cannot_pass_required_qualifiers(
         assert qualifier in answer
 
 
+def test_abstention_token_is_exact() -> None:
+    assert ABSTENTION_PHRASE == "INSUFFICIENT_CONTEXT"
+
+
 @pytest.mark.parametrize("case", ABSTAINING, ids=lambda case: case.case_id)
 def test_abstention_is_exact(case: GoldenCase, records: dict[str, RagRecord]) -> None:
-    assert case.expected_answer == ABSTENTION_PHRASE
-    assert records[case.case_id].answer == ABSTENTION_PHRASE
+    assert case.expected_answer == "INSUFFICIENT_CONTEXT"
+    assert records[case.case_id].answer == "INSUFFICIENT_CONTEXT"
 
 
 @pytest.mark.parametrize("case", GOLDEN, ids=lambda case: case.case_id)
@@ -579,11 +591,16 @@ def test_prompt_builder_is_directly_callable_without_a_client(
     case = GOLDEN_BY_ID["numeric-source-verdigris-dose"]
     record = records[case.case_id]
     context, messages = build_generation_messages(record.question, record.retrieved_chunks)
+    expected_messages = [
+        PromptMessage(role="system", content=_EXPECTED_SYSTEM_INSTRUCTIONS),
+        PromptMessage(
+            role="user",
+            content=f"QUESTION:\n{record.question}\n\nCONTEXT:\n{record.context_payload}",
+        ),
+    ]
     assert context == record.context_payload
-    assert messages == list(record.generation_messages)
-    assert ABSTENTION_PHRASE in messages[0].content
-    assert "Repeat the supporting" in messages[0].content
-    assert "`grimoire_id` verbatim" in messages[0].content
+    assert messages == expected_messages
+    assert list(record.generation_messages) == expected_messages
 
 
 def _capture_contract_chunk(
