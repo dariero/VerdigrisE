@@ -146,6 +146,17 @@ _SIBLING_CONFLICT_LITERALS = {
     "moonflower-golden-vapor": "17 grains",
     "sunspire-orchid-harvest": "10 moon-phases",
 }
+# The retrieval-bearing qualifier each entry carries, per corpus.py's own contract note.
+_EXPECTED_CONDITIONS = {
+    "moonpetal-silver-vapor": "ground with pearl salt",
+    "moonflower-golden-vapor": "ground with pearl salt",
+    "verdigris-dose-verdant": "distilled in copper and administered after dusk",
+    "verdigris-dose-amber": "distilled in amber glass and administered at dawn",
+    "verdigris-dose-obsidian": "distilled in basalt during a lunar eclipse",
+    "shadeglass-orchid-harvest": "grown entirely in shade",
+    "sunspire-orchid-harvest": "grown in full sun",
+    "asterquartz-powdering": "powdered for elixirs",
+}
 
 
 class FixedEmbeddingProvider:
@@ -394,6 +405,35 @@ def test_corpus_has_stable_identity_and_grimoire_citations() -> None:
         assert entry["grimoire_id"] is None or entry["grimoire_id"].strip()
         assert entry["folio"] is None or isinstance(entry["folio"], (int, str))
         assert not isinstance(entry["folio"], str) or entry["folio"].strip()
+
+
+def test_corpus_order_is_pinned() -> None:
+    """Corpus order is contract data: the persisted fingerprint is order-sensitive.
+
+    An ordered list rather than a digest, so a failure names the entry that moved
+    instead of reporting only that something changed.
+    """
+
+    assert [entry["id"] for entry in CORPUS] == [
+        "moonpetal-silver-vapor",
+        "moonflower-golden-vapor",
+        "verdigris-dose-verdant",
+        "verdigris-dose-amber",
+        "verdigris-dose-obsidian",
+        "shadeglass-orchid-harvest",
+        "sunspire-orchid-harvest",
+        "asterquartz-powdering",
+    ]
+
+
+def test_condition_metadata_is_pinned() -> None:
+    """`condition` is the field that stops a value-only answer from passing.
+
+    Only the verdant entry's condition was pinned anywhere, and that incidentally,
+    inside a persistence test.
+    """
+
+    assert {entry["id"]: entry["condition"] for entry in CORPUS} == _EXPECTED_CONDITIONS
 
 
 def _entry_with_updates(**updates: object) -> CorpusEntry:
@@ -2616,6 +2656,33 @@ def test_public_ask_delegates_to_the_default_real_pipeline(
     assert pipeline_module.ask(case.question) == expected_record
     assert build_calls == [None]
     assert asked_questions == [case.question]
+
+
+def test_generation_policy_constants_are_pinned() -> None:
+    """Pin the configured generation identity to literals, not to itself.
+
+    The provider-kwarg assertions build their expected mapping from these same
+    constants, so they cannot fail when a constant changes. `OPENAI_MAX_RETRIES`
+    and `OPENAI_TIMEOUT_SECONDS` below are already pinned this way.
+    """
+
+    assert GENERATION_MODEL == "gpt-5.6-luna"
+    assert GENERATION_TEMPERATURE == 0.0
+    assert EMBEDDING_MODEL == "text-embedding-3-small"
+
+
+def test_pipeline_rejects_mismatched_embedding_models() -> None:
+    """A query embedded in one model's space must never be scored against another's."""
+
+    index = NumpyVectorIndex(dimension=1, embedding_model="corpus-embedding-model")
+    index.index([CORPUS[0]], np.asarray([[1.0]], dtype=np.float32))
+
+    with pytest.raises(ValueError, match="Corpus and query embedding models differ"):
+        RagPipeline(
+            index=index,
+            embedder=SimpleNamespace(model="query-embedding-model"),
+            generator=FixedAnswerGenerator(),
+        )
 
 
 def test_real_client_uses_exact_bounded_policy(monkeypatch: pytest.MonkeyPatch) -> None:
