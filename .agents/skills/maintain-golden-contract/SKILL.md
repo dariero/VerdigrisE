@@ -33,12 +33,16 @@ description: "Safely evolve VerdigrisE's executable corpus, adversarial golden c
     For each one, name the single edit that should break it, then execute this loop:
 
     ```bash
+    git status --porcelain -- <target file>   # begin only from a state you can restore exactly
+    saved="$(mktemp)"; cp <target file> "$saved"
     # apply exactly one minimal edit to the value the assertion claims to protect
-    .venv/bin/python -m pytest eval/ -q     # expect the named assertion to FAIL
-    git checkout -- <mutated file>
-    .venv/bin/python -m pytest eval/ -q     # expect green again
+    .venv/bin/python -m pytest eval/ -q       # expect the named assertion to FAIL
+    cp "$saved" <target file>                 # restore those exact bytes, and nothing else
+    .venv/bin/python -m pytest eval/ -q       # expect green again
     ```
 
-    Record the mutation and the resulting `FAILED` node id in the pull-request body. Mutate one value at a time, verify the revert with `git status --porcelain` before the next, and stage your own work first so the revert restores it rather than discarding it. Never use a paid tier for this; the free suite is what distinguishes a load-bearing assertion from a decorative one.
+    Do not revert with `git checkout -- <target file>`. That overwrites the file from the index and discards every unstaged edit in it, including unrelated user work this repository requires you to preserve. Staging those hunks to protect them would break the atomic change instead. Restoring the saved bytes is the only reversal that touches nothing but the mutation.
+
+    Record the mutation and the resulting `FAILED` node id in the pull-request body. Mutate one value at a time, and confirm with `git status --porcelain` that the file's state matches what it was before you began. Never use a paid tier for this; the free suite is what distinguishes a load-bearing assertion from a decorative one.
 
     Reasoning that an assertion would fail does not satisfy this step. The assertions this repository has lost to self-comparison all looked correct when read. If the loop comes back green, the assertion is not protecting the value it names, and the fix belongs in this change rather than a later one.
