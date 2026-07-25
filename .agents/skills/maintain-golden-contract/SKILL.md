@@ -35,13 +35,17 @@ description: "Safely evolve VerdigrisE's executable corpus, adversarial golden c
     ```bash
     git status --porcelain -- <target file>   # begin only from a state you can restore exactly
     saved="$(mktemp)"; cp <target file> "$saved"
+    trap 'cp "$saved" <target file>' EXIT INT TERM   # interruption must not leave the mutation behind
     # apply exactly one minimal edit to the value the assertion claims to protect
-    .venv/bin/python -m pytest eval/ -q       # expect the named assertion to FAIL
+    .venv/bin/python -m pytest eval/ -m "not openai and not rag_test" -q   # expect the named assertion to FAIL
     cp "$saved" <target file>                 # restore those exact bytes, and nothing else
-    .venv/bin/python -m pytest eval/ -q       # expect green again
+    trap - EXIT INT TERM
+    .venv/bin/python -m pytest eval/ -m "not openai and not rag_test" -q   # expect green again
     ```
 
-    Do not revert with `git checkout -- <target file>`. That overwrites the file from the index and discards every unstaged edit in it, including unrelated user work this repository requires you to preserve. Staging those hunks to protect them would break the atomic change instead. Restoring the saved bytes is the only reversal that touches nothing but the mutation.
+    Select the free markers explicitly on both runs rather than relying on the default. A counterfactual may mutate the very setting that supplies that default, and the safety boundary must not depend on the value under test. Removing the `addopts` exclusion and then running an unqualified `pytest eval/ -q` selects the paid nodes: with provider keys exported that can make unapproved calls, and without them collection aborts before the named assertion ever runs, so the counterfactual proves nothing either way.
+
+    Do not revert with `git checkout -- <target file>`. That overwrites the file from the index and discards every unstaged edit in it, including unrelated user work this repository requires you to preserve. Staging those hunks to protect them would break the atomic change instead. Restoring the saved bytes is the only reversal that touches nothing but the mutation, and the trap is what keeps that promise when the run is interrupted between the mutation and the restore.
 
     Record the mutation and the resulting `FAILED` node id in the pull-request body. Mutate one value at a time, and confirm with `git status --porcelain` that the file's state matches what it was before you began. Never use a paid tier for this; the free suite is what distinguishes a load-bearing assertion from a decorative one.
 
