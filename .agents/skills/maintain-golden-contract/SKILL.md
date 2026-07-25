@@ -28,3 +28,17 @@ description: "Safely evolve VerdigrisE's executable corpus, adversarial golden c
     ```
 
     Use `run-paid-evaluation` only after separate approval for a specific paid invocation.
+11. Prove that every assertion you added or changed can fail. A green suite shows an assertion runs, not that it constrains anything, and an assertion that reads a value from the artifact under test and compares it against itself passes forever.
+
+    For each one, name the single edit that should break it, then execute this loop:
+
+    ```bash
+    # apply exactly one minimal edit to the value the assertion claims to protect
+    .venv/bin/python -m pytest eval/ -q     # expect the named assertion to FAIL
+    git checkout -- <mutated file>
+    .venv/bin/python -m pytest eval/ -q     # expect green again
+    ```
+
+    Record the mutation and the resulting `FAILED` node id in the pull-request body. Mutate one value at a time, verify the revert with `git status --porcelain` before the next, and stage your own work first so the revert restores it rather than discarding it. Never use a paid tier for this; the free suite is what distinguishes a load-bearing assertion from a decorative one.
+
+    Reasoning that an assertion would fail does not satisfy this step. The assertions this repository has lost to self-comparison all looked correct when read. If the loop comes back green, the assertion is not protecting the value it names, and the fix belongs in this change rather than a later one.
