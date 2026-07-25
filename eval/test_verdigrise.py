@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import pickle
+import subprocess
 import tomllib
 from collections import OrderedDict, UserDict
 from collections.abc import Mapping
@@ -3228,6 +3229,59 @@ def test_default_marker_policy_excludes_both_paid_tiers() -> None:
         "openai",
         "rag_test",
     ], "Both paid markers must stay registered for the default exclusion to select anything."
+
+
+def _tracked_paths() -> list[str]:
+    completed = subprocess.run(
+        ["git", "ls-files"],
+        cwd=eval_conftest.PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return completed.stdout.split()
+
+
+def _architecture_tree_entries() -> list[str]:
+    """Return the names listed in the README architecture tree, in document order."""
+
+    readme = (eval_conftest.PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+    tree = readme.split("./VerdigrisE/", 1)[1].split("```", 1)[0]
+    entries = [
+        line.split("├── ")[-1].split("└── ")[-1].split("#")[0].strip()
+        for line in tree.splitlines()
+        if "├── " in line or "└── " in line
+    ]
+    assert entries, "The README architecture tree could not be parsed"
+    return entries
+
+
+def test_architecture_tree_names_only_paths_that_exist() -> None:
+    """A tree entry for a file that no longer exists sends a reader to nothing."""
+
+    known: set[str] = set()
+    for path in _tracked_paths():
+        parts = path.split("/")
+        known.add(parts[-1])
+        known.update(f"{part}/" for part in parts[:-1])
+
+    for entry in _architecture_tree_entries():
+        assert entry in known, f"README lists {entry!r}, which is not a tracked path"
+
+
+def test_every_tracked_top_level_path_is_documented() -> None:
+    """An artifact absent from the README is one a reader never learns exists.
+
+    Deliberately whole-file containment rather than tree-structure parsing: the
+    claim worth enforcing is that the artifact is documented somewhere, and
+    structure parsing would fail on formatting rather than on substance.
+    """
+
+    readme = (eval_conftest.PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+    top_level = {f"{path.split('/')[0]}/" if "/" in path else path for path in _tracked_paths()}
+
+    undocumented = sorted(path for path in top_level if path not in readme)
+    assert undocumented == [], f"README does not mention tracked paths: {undocumented}"
 
 
 def _build_ingested_pipeline(
