@@ -309,14 +309,20 @@ RagaliQ's native pytest plugin supplies `rag_tester`, `ClaudeJudge`, retrying tr
 
 ```
 ./VerdigrisE/
+├── .agents/
+│   └── skills/                  # Golden-contract, paid-evaluation, ship, and upgrade procedures
 ├── .github/
+│   ├── CODEOWNERS               # Review routing for policy and contract surfaces
 │   └── workflows/
 │       └── ci.yml               # Locked, secret-free pull-request validation
 ├── .pre-commit-config.yaml      # Ruff and repository-hygiene commit hooks
 ├── .python-version              # Canonical Python 3.14 interpreter line
 ├── .env.example                 # Provider-key placeholders only
 ├── .gitignore                   # Secret, environment, index, and cache exclusions
+├── AGENTS.md                    # Repository guidance, ownership rules, and review checklist
+├── LICENSE                      # MIT license text
 ├── README.md                    # Setup, contracts, commands, and boundaries
+├── SECURITY.md                  # Private vulnerability reporting policy
 ├── config.py                    # Model, abstention, retrieval, and index constants
 ├── corpus.py                    # Corpus dictionaries and golden cases
 ├── models.py                    # RetrievedChunk, PromptMessage, and RagRecord
@@ -326,7 +332,7 @@ RagaliQ's native pytest plugin supplies `rag_tester`, `ClaudeJudge`, retrying tr
 ├── uv.lock                      # Solver decisions and dependency graph
 └── eval/
     ├── __init__.py
-    ├── conftest.py              # Flat-module import boundary
+    ├── conftest.py              # Flat-module imports and fail-closed paid-credential preflight
     ├── ragaliq_adapter.py       # Canned structural transport and case mapping
     └── test_verdigrise.py       # Exact, provider-acceptance, and semantic tiers
 ```
