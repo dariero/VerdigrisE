@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import pickle
+import tomllib
 from collections import OrderedDict, UserDict
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
@@ -3092,6 +3093,24 @@ def test_paid_credential_preflight_fails_before_selected_paid_tests(
         ),
     ):
         eval_conftest.pytest_collection_finish(session)
+
+
+def test_default_marker_policy_excludes_both_paid_tiers() -> None:
+    """The default selection is the only barrier protecting an unattended run from spending."""
+
+    pyproject = eval_conftest.PROJECT_ROOT / "pyproject.toml"
+    config = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    pytest_config = config.get("tool", {}).get("pytest", {})
+
+    assert pytest_config.get("addopts") == ["-m", "not openai and not rag_test"], (
+        "The default pytest selection no longer excludes both paid markers. An unattended "
+        "`pytest eval/` would select paid OpenAI and RagaliQ nodes and spend real money "
+        "on any machine where the provider keys are exported."
+    )
+    assert sorted(marker.split(":")[0] for marker in pytest_config.get("markers", [])) == [
+        "openai",
+        "rag_test",
+    ], "Both paid markers must stay registered for the default exclusion to select anything."
 
 
 def _build_ingested_pipeline(

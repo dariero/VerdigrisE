@@ -26,13 +26,13 @@ description: "Run VerdigrisE's opt-in live OpenAI and RagaliQ Claude paths under
    Paid all-golden OpenAI acceptance; requires `OPENAI_API_KEY`:
 
    ```bash
-   .venv/bin/python -m pytest -o addopts='' -m "openai and not rag_test" eval/ -q
+   .venv/bin/python -m pytest -m "openai and not rag_test" eval/ -q
    ```
 
    Paid cross-family semantic evaluation; requires both `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`:
 
    ```bash
-   .venv/bin/python -m pytest -o addopts='' -m "openai and rag_test" --ragaliq-cost-limit 5.00 eval/ -q
+   .venv/bin/python -m pytest -m "openai and rag_test" --ragaliq-cost-limit 5.00 eval/ -q
    ```
 
 6. Do not manually rerun a failed command, broaden marker selection, or run both tiers. No automatic OpenAI SDK retry occurs, but RagaliQ or Anthropic may retry inside the semantic invocation. Report passes, failures, skips, timeouts, and any recorded estimated cost. State that a timed-out request may still be processed or billed and that `--ragaliq-cost-limit` is an approximate post-test guard, not a strict pre-spend cap.

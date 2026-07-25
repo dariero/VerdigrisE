@@ -72,3 +72,16 @@ jobs:
           --cov-report=term-missing
           eval/
           -q
+
+      - name: Prove the default invocation still deselects both paid tiers
+        run: |
+          # Every other step re-selects markers explicitly, so this is the only
+          # check that exercises the unmodified default selection. It asserts the
+          # paid-node count, not the collected total, so ordinary new free tests
+          # never touch it; adding or removing a paid node must update it here.
+          selection="$(.venv/bin/python -m pytest eval/ --collect-only -q | tail -1)"
+          printf 'default selection: %s\n' "$selection"
+          case "$selection" in
+            *"(13 deselected)"*) ;;
+            *) echo "::error::default marker policy no longer deselects both paid tiers"; exit 1 ;;
+          esac
