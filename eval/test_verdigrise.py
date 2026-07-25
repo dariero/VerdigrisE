@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import pickle
+from collections import OrderedDict, UserDict
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -420,9 +421,16 @@ def test_corpus_rejects_duplicate_ids() -> None:
         pytest.param("id", None, "id must be a non-blank string", id="id-type"),
         pytest.param("id", "", "id must be a non-blank string", id="id-empty"),
         pytest.param("id", " \t\n", "id must be a non-blank string", id="id-blank"),
+        pytest.param("id", "\ud800", "id must be valid UTF-8", id="id-non-utf8"),
         pytest.param("text", None, "text must be a non-blank string", id="text-type"),
         pytest.param("text", "", "text must be a non-blank string", id="text-empty"),
         pytest.param("text", " \t\n", "text must be a non-blank string", id="text-blank"),
+        pytest.param(
+            "text",
+            "\ud800",
+            "text must be valid UTF-8",
+            id="text-non-utf8",
+        ),
         pytest.param("subject", None, "subject must be a non-blank string", id="subject-type"),
         pytest.param("subject", "", "subject must be a non-blank string", id="subject-empty"),
         pytest.param(
@@ -1081,6 +1089,52 @@ def test_chunk_metadata_rejects_non_string_nested_mapping_keys() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        pytest.param({"value": "\ud800"}, id="leaf"),
+        pytest.param({"\ud800": "value"}, id="key"),
+    ],
+)
+def test_chunk_metadata_rejects_non_utf8_strings(metadata: dict[str, object]) -> None:
+    with pytest.raises(ValidationError, match="metadata strings must be valid UTF-8"):
+        RetrievedChunk(
+            id="verdigris-dose-verdant",
+            text="Verbatim evidence.",
+            metadata=metadata,
+            distance=0.25,
+            similarity=0.75,
+        )
+
+
+def test_chunk_metadata_rejects_json_incompatible_integer() -> None:
+    with pytest.raises(ValidationError, match="metadata integer leaves must be JSON-encodable"):
+        RetrievedChunk(
+            id="verdigris-dose-verdant",
+            text="Verbatim evidence.",
+            metadata={"value": 10**5000},
+            distance=0.25,
+            similarity=0.75,
+        )
+
+
+def test_chunk_metadata_accepts_custom_mapping_containers() -> None:
+    chunk = RetrievedChunk(
+        id="verdigris-dose-verdant",
+        text="Verbatim evidence.",
+        metadata={
+            "grimoire_id": "GRIM-VERDANT",
+            "nested": UserDict({"qualifier": "after dusk"}),
+        },
+        distance=0.25,
+        similarity=0.75,
+    )
+
+    nested = chunk.metadata["nested"]
+    assert isinstance(nested, Mapping)
+    assert nested["qualifier"] == "after dusk"
+
+
 def test_immutable_captures_preserve_dump_and_json_container_shapes() -> None:
     record = _capture_contract_record()
 
@@ -1228,6 +1282,114 @@ def test_index_detaches_nested_metadata_from_caller(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        pytest.param(
+            {"nested": {1: "invalid"}},
+            "metadata mapping keys must be strings",
+            id="non-string-key",
+        ),
+        pytest.param(
+            {"value": "\ud800"},
+            "metadata strings must be valid UTF-8",
+            id="non-utf8-leaf",
+        ),
+        pytest.param(
+            {"\ud800": "value"},
+            "metadata strings must be valid UTF-8",
+            id="non-utf8-key",
+        ),
+        pytest.param(
+            {"nested": [SimpleNamespace(value=1)]},
+            "JSON scalar leaves",
+            id="unsupported-leaf",
+        ),
+        pytest.param(
+            {"nested": UserDict({"value": 1})},
+            "metadata mappings must use dictionaries",
+            id="custom-mapping",
+        ),
+        pytest.param(
+            {"value": float("nan")},
+            "metadata float leaves must be finite",
+            id="nan",
+        ),
+        pytest.param(
+            {"value": float("inf")},
+            "metadata float leaves must be finite",
+            id="positive-infinity",
+        ),
+        pytest.param(
+            {"value": float("-inf")},
+            "metadata float leaves must be finite",
+            id="negative-infinity",
+        ),
+        pytest.param(
+            {"value": 10**5000},
+            "metadata integer leaves must be JSON-encodable",
+            id="json-incompatible-integer",
+        ),
+    ],
+)
+def test_index_rejects_query_incompatible_metadata(value: object, message: str) -> None:
+    entry = cast(CorpusEntry, {**CORPUS[0], "audit": value})
+    index = NumpyVectorIndex(dimension=1, embedding_model=EMBEDDING_MODEL)
+
+    with pytest.raises(ValueError, match=message):
+        index.index([entry], np.asarray([[1.0]], dtype=np.float32))
+
+
+@pytest.mark.parametrize("container_kind", ["mapping", "sequence"])
+def test_index_rejects_metadata_reference_cycles(container_kind: str) -> None:
+    if container_kind == "mapping":
+        cycle: object = {}
+        assert isinstance(cycle, dict)
+        cycle["self"] = cycle
+    else:
+        cycle = []
+        assert isinstance(cycle, list)
+        cycle.append(cycle)
+    entry = cast(CorpusEntry, {**CORPUS[0], "audit": cycle})
+    index = NumpyVectorIndex(dimension=1, embedding_model=EMBEDDING_MODEL)
+
+    with pytest.raises(ValueError, match="metadata values must not contain reference cycles"):
+        index.index([entry], np.asarray([[1.0]], dtype=np.float32))
+
+
+def test_index_accepts_shared_acyclic_metadata_containers() -> None:
+    shared = ["after dusk"]
+    entry = cast(
+        CorpusEntry,
+        {**CORPUS[0], "audit": {"first": shared, "second": shared}},
+    )
+    index = NumpyVectorIndex(dimension=1, embedding_model=EMBEDDING_MODEL)
+    vector = np.asarray([1.0], dtype=np.float32)
+
+    index.index([entry], vector[None, :])
+    audit = index.search(vector, top_k=1)[0].metadata["audit"]
+
+    assert isinstance(audit, Mapping)
+    assert audit["first"] == ("after dusk",)
+    assert audit["second"] == ("after dusk",)
+
+
+def test_index_roundtrip_accepts_dict_subclass_metadata(tmp_path: Path) -> None:
+    entry = cast(
+        CorpusEntry,
+        {**CORPUS[0], "audit": OrderedDict([("qualifier", "after dusk")])},
+    )
+    index = NumpyVectorIndex(dimension=1, embedding_model=EMBEDDING_MODEL)
+    vector = np.asarray([1.0], dtype=np.float32)
+    index.index([entry], vector[None, :])
+    index.save(tmp_path)
+
+    audit = NumpyVectorIndex.load(tmp_path).search(vector, top_k=1)[0].metadata["audit"]
+
+    assert isinstance(audit, Mapping)
+    assert audit["qualifier"] == "after dusk"
+
+
+@pytest.mark.parametrize(
     ("target_kind", "message"),
     [
         pytest.param(
@@ -1293,6 +1455,49 @@ def test_unpaid_ingest_rejects_invalid_storage_before_embedding(
         ingest_corpus(embedder=embedder, output_directory=index_directory)
 
     assert embedder.calls == []
+
+
+@pytest.mark.parametrize(
+    ("updates", "message"),
+    [
+        pytest.param(
+            {"audit": {"value": float("nan")}},
+            "metadata float leaves must be finite",
+            id="non-finite-metadata",
+        ),
+        pytest.param(
+            {"audit": {"value": 10**5000}},
+            "metadata integer leaves must be JSON-encodable",
+            id="json-incompatible-integer",
+        ),
+        pytest.param(
+            {"id": "\ud800"},
+            "Corpus id must be valid UTF-8",
+            id="non-utf8-id",
+        ),
+        pytest.param(
+            {"text": "\ud800"},
+            "Corpus text must be valid UTF-8",
+            id="non-utf8-text",
+        ),
+    ],
+)
+def test_unpaid_ingest_rejects_invalid_entry_before_embedding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    updates: dict[str, object],
+    message: str,
+) -> None:
+    index_directory = tmp_path / "index"
+    invalid_entry = cast(CorpusEntry, {**CORPUS[0], **updates})
+    monkeypatch.setattr(pipeline_module, "CORPUS", [invalid_entry])
+    embedder = FixedEmbeddingProvider()
+
+    with pytest.raises(ValueError, match=message):
+        ingest_corpus(embedder=embedder, output_directory=index_directory)
+
+    assert embedder.calls == []
+    assert not index_directory.exists()
 
 
 def test_ingest_storage_preflight_does_not_create_directories(
@@ -1909,23 +2114,37 @@ def test_index_constructor_rejects_invalid_identity(
 
 
 @pytest.mark.parametrize(
-    ("field", "message"),
+    ("field", "value", "message"),
     [
         pytest.param(
             "id",
+            " \t\n",
             "Indexed entry id must be a non-blank string",
             id="blank-id",
         ),
         pytest.param(
             "text",
+            " \t\n",
             "Indexed entry text must be a non-blank string",
             id="blank-text",
         ),
+        pytest.param(
+            "id",
+            "\ud800",
+            "Indexed entry id must be valid UTF-8",
+            id="non-utf8-id",
+        ),
+        pytest.param(
+            "text",
+            "\ud800",
+            "Indexed entry text must be valid UTF-8",
+            id="non-utf8-text",
+        ),
     ],
 )
-def test_index_rejects_blank_id_or_text(field: str, message: str) -> None:
+def test_index_rejects_invalid_id_or_text(field: str, value: str, message: str) -> None:
     index = NumpyVectorIndex(dimension=1, embedding_model=EMBEDDING_MODEL)
-    entry = _entry_with_updates(**{field: " \t\n"})
+    entry = _entry_with_updates(**{field: value})
 
     with pytest.raises(ValueError, match=message):
         index.index([entry], np.asarray([[1.0]], dtype=np.float32))
@@ -2101,9 +2320,19 @@ def test_index_roundtrip_preserves_padded_nonblank_id_and_text(tmp_path: Path) -
         pytest.param("missing-field", "contain id, text, and metadata", id="missing-field"),
         pytest.param("empty-id", "non-blank string", id="empty-id"),
         pytest.param("blank-id", "non-blank string", id="blank-id"),
+        pytest.param(
+            "non-utf8-id",
+            "Indexed entry id must be valid UTF-8",
+            id="non-utf8-id",
+        ),
         pytest.param("duplicate-id", "Duplicate indexed entry id", id="duplicate-id"),
         pytest.param("empty-text", "text must be a non-blank string", id="empty-text"),
         pytest.param("blank-text", "text must be a non-blank string", id="blank-text"),
+        pytest.param(
+            "non-utf8-text",
+            "Indexed entry text must be valid UTF-8",
+            id="non-utf8-text",
+        ),
         pytest.param("metadata-not-object", "metadata is invalid", id="metadata-not-object"),
         pytest.param("missing-citation", "missing citation fields", id="missing-citation"),
         pytest.param("invalid-grimoire", "grimoire_id is invalid", id="invalid-grimoire"),
@@ -2144,6 +2373,8 @@ def test_index_load_rejects_invalid_entries(tmp_path: Path, mutation: str, messa
             entry["id"] = ""
         elif mutation == "blank-id":
             entry["id"] = " \t\n"
+        elif mutation == "non-utf8-id":
+            entry["id"] = "\ud800"
         elif mutation == "duplicate-id":
             second = entries[1]
             assert isinstance(second, dict)
@@ -2152,6 +2383,8 @@ def test_index_load_rejects_invalid_entries(tmp_path: Path, mutation: str, messa
             entry["text"] = ""
         elif mutation == "blank-text":
             entry["text"] = " \t\n"
+        elif mutation == "non-utf8-text":
+            entry["text"] = "\ud800"
         elif mutation == "metadata-not-object":
             entry["metadata"] = []
         else:
@@ -2179,6 +2412,41 @@ def test_index_load_rejects_invalid_entries(tmp_path: Path, mutation: str, messa
 
     _write_manifest(tmp_path, manifest)
     with pytest.raises(ValueError, match=message):
+        NumpyVectorIndex.load(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param(float("nan"), id="nan"),
+        pytest.param(float("inf"), id="positive-infinity"),
+        pytest.param(float("-inf"), id="negative-infinity"),
+    ],
+)
+def test_index_load_rejects_non_finite_metadata_with_matching_fingerprint(
+    tmp_path: Path,
+    value: float,
+) -> None:
+    _persist_fixed_index(tmp_path)
+    manifest = _read_manifest(tmp_path)
+    entries = manifest["entries"]
+    assert isinstance(entries, list)
+    first = entries[0]
+    assert isinstance(first, dict)
+    metadata = first["metadata"]
+    assert isinstance(metadata, dict)
+    metadata["audit"] = {"value": value}
+    manifest["corpus_sha256"] = hashlib.sha256(
+        json.dumps(
+            entries,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    _write_manifest(tmp_path, manifest)
+
+    with pytest.raises(ValueError, match="metadata float leaves must be finite"):
         NumpyVectorIndex.load(tmp_path)
 
 

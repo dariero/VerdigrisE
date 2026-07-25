@@ -1,10 +1,11 @@
 """Stable data contracts shared by VerdigrisE and its evaluation suite."""
 
+import json
 from collections.abc import Iterator, Mapping
 from copy import deepcopy
 from math import isclose, isfinite
 from types import MappingProxyType
-from typing import Any, Literal, Self, override
+from typing import Any, Literal, Self, cast, override
 
 from pydantic import (
     BaseModel,
@@ -65,21 +66,93 @@ class _CaptureModel(BaseModel):
         return type(self).model_validate(values)
 
 
-def _freeze_metadata_value(value: object) -> object:
+def validate_utf8_string(value: str, *, label: str) -> None:
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise ValueError(f"{label} must be valid UTF-8") from exc
+
+
+def _freeze_metadata_value(
+    value: object,
+    *,
+    require_json_containers: bool,
+    active_container_ids: set[int],
+) -> object:
     """Recursively detach and freeze the JSON-like containers metadata can own."""
 
     if isinstance(value, Mapping):
-        if any(type(key) is not str for key in value):
-            raise ValueError("metadata mapping keys must be strings")
-        return _ImmutableMapping({key: _freeze_metadata_value(item) for key, item in value.items()})
+        if require_json_containers and not isinstance(value, dict):
+            raise ValueError("metadata mappings must use dictionaries for index persistence")
+        for key in value:
+            if type(key) is not str:
+                raise ValueError("metadata mapping keys must be strings")
+            validate_utf8_string(key, label="metadata strings")
+        container_id = id(value)
+        if container_id in active_container_ids:
+            raise ValueError("metadata values must not contain reference cycles")
+        active_container_ids.add(container_id)
+        try:
+            return _ImmutableMapping(
+                {
+                    key: _freeze_metadata_value(
+                        item,
+                        require_json_containers=require_json_containers,
+                        active_container_ids=active_container_ids,
+                    )
+                    for key, item in value.items()
+                }
+            )
+        finally:
+            active_container_ids.remove(container_id)
     if isinstance(value, (list, tuple)):
-        return tuple(_freeze_metadata_value(item) for item in value)
+        container_id = id(value)
+        if container_id in active_container_ids:
+            raise ValueError("metadata values must not contain reference cycles")
+        active_container_ids.add(container_id)
+        try:
+            return tuple(
+                _freeze_metadata_value(
+                    item,
+                    require_json_containers=require_json_containers,
+                    active_container_ids=active_container_ids,
+                )
+                for item in value
+            )
+        finally:
+            active_container_ids.remove(container_id)
     if type(value) is float and not isfinite(value):
         raise ValueError("metadata float leaves must be finite")
-    if value is None or type(value) in {str, int, float, bool}:
+    if type(value) is str:
+        validate_utf8_string(value, label="metadata strings")
+        return value
+    if type(value) is int:
+        try:
+            json.dumps(value)
+        except ValueError as exc:
+            raise ValueError("metadata integer leaves must be JSON-encodable") from exc
+        return value
+    if value is None or type(value) in {float, bool}:
         return value
     raise ValueError(
         "metadata values must use string-keyed mappings, ordered sequences, and JSON scalar leaves"
+    )
+
+
+def validate_and_freeze_metadata(
+    metadata: Mapping[str, object],
+    *,
+    require_json_containers: bool = False,
+) -> Mapping[str, object]:
+    """Validate one metadata tree and return a detached immutable snapshot."""
+
+    return cast(
+        Mapping[str, object],
+        _freeze_metadata_value(
+            metadata,
+            require_json_containers=require_json_containers,
+            active_container_ids=set(),
+        ),
     )
 
 
@@ -105,9 +178,7 @@ class RetrievedChunk(_CaptureModel):
     @field_validator("metadata", mode="after")
     @classmethod
     def metadata_must_be_immutable(cls, metadata: Mapping[str, object]) -> Mapping[str, object]:
-        return _ImmutableMapping(
-            {key: _freeze_metadata_value(value) for key, value in metadata.items()}
-        )
+        return validate_and_freeze_metadata(metadata)
 
     @model_validator(mode="after")
     def retrieval_metrics_must_match(self) -> RetrievedChunk:

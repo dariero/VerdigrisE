@@ -46,7 +46,13 @@ from config import (
     TOP_K,
 )
 from corpus import CORPUS, CorpusEntry, validate_corpus
-from models import PromptMessage, RagRecord, RetrievedChunk
+from models import (
+    PromptMessage,
+    RagRecord,
+    RetrievedChunk,
+    validate_and_freeze_metadata,
+    validate_utf8_string,
+)
 
 type _Float32Array = NDArray[np.float32]
 
@@ -210,16 +216,18 @@ class NumpyVectorIndex:
 
     @staticmethod
     def _make_index_entries(entries: Sequence[CorpusEntry]) -> list[_IndexEntry]:
-        return [
-            {
-                "id": entry["id"],
-                "text": entry["text"],
-                "metadata": deepcopy(
-                    {key: value for key, value in entry.items() if key not in {"id", "text"}}
-                ),
-            }
-            for entry in entries
-        ]
+        indexed_entries: list[_IndexEntry] = []
+        for entry in entries:
+            metadata = {key: value for key, value in entry.items() if key not in {"id", "text"}}
+            validate_and_freeze_metadata(metadata, require_json_containers=True)
+            indexed_entries.append(
+                {
+                    "id": entry["id"],
+                    "text": entry["text"],
+                    "metadata": deepcopy(metadata),
+                }
+            )
+        return indexed_entries
 
     @staticmethod
     def _validate_index_entries(entries: object) -> list[_IndexEntry]:
@@ -234,13 +242,16 @@ class NumpyVectorIndex:
             metadata = entry["metadata"]
             if not isinstance(chunk_id, str) or not chunk_id.strip():
                 raise ValueError("Indexed entry id must be a non-blank string")
+            validate_utf8_string(chunk_id, label="Indexed entry id")
             if chunk_id in seen_ids:
                 raise ValueError(f"Duplicate indexed entry id: {chunk_id}")
             seen_ids.add(chunk_id)
             if not isinstance(text, str) or not text.strip():
                 raise ValueError(f"Indexed entry text must be a non-blank string for {chunk_id}")
+            validate_utf8_string(text, label="Indexed entry text")
             if not isinstance(metadata, dict):
                 raise ValueError(f"Indexed entry metadata is invalid for {chunk_id}")
+            validate_and_freeze_metadata(metadata, require_json_containers=True)
             if not {"grimoire_id", "folio"}.issubset(metadata):
                 raise ValueError(
                     f"Indexed entry metadata is missing citation fields for {chunk_id}"
@@ -266,6 +277,7 @@ class NumpyVectorIndex:
             ensure_ascii=False,
             separators=(",", ":"),
             sort_keys=True,
+            allow_nan=False,
         ).encode("utf-8")
         return hashlib.sha256(canonical).hexdigest()
 
@@ -452,7 +464,7 @@ class NumpyVectorIndex:
                 "entries": self._entries,
             }
             manifest_path.write_text(
-                json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+                json.dumps(manifest, indent=2, sort_keys=True, allow_nan=False) + "\n",
                 encoding="utf-8",
             )
             self._fsync_file(vector_path)
@@ -674,7 +686,7 @@ def ingest_corpus(
 ) -> NumpyVectorIndex:
     """Run stages 1 and 2 for the corpus, then persist the validated index."""
 
-    validate_corpus()
+    validate_corpus(CORPUS)
     NumpyVectorIndex._preflight_storage(output_directory)
     texts = [entry["text"] for entry in CORPUS]
     ids = [entry["id"] for entry in CORPUS]

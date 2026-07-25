@@ -9,6 +9,7 @@ unanswered shelf-life question owns exact abstention behaviour.
 from typing import TypedDict
 
 from config import ABSTENTION_PHRASE
+from models import validate_and_freeze_metadata, validate_utf8_string
 
 
 class CorpusEntry(TypedDict):
@@ -392,11 +393,13 @@ def validate_corpus(entries: list[CorpusEntry] = CORPUS) -> None:
             raise ValueError(f"Corpus entry is missing fields: {sorted(missing)}")
         if not isinstance(entry["id"], str) or not entry["id"].strip():
             raise ValueError("Corpus id must be a non-blank string")
+        validate_utf8_string(entry["id"], label="Corpus id")
         if entry["id"] in ids:
             raise ValueError(f"Duplicate corpus id: {entry['id']}")
         ids.add(entry["id"])
         if not isinstance(entry["text"], str) or not entry["text"].strip():
             raise ValueError(f"Corpus text must be a non-blank string for {entry['id']}")
+        validate_utf8_string(entry["text"], label="Corpus text")
         grimoire_id = entry["grimoire_id"]
         folio = entry["folio"]
         if grimoire_id is None and folio is None:
@@ -412,6 +415,8 @@ def validate_corpus(entries: list[CorpusEntry] = CORPUS) -> None:
         for key in ("subject", "fact_type", "condition"):
             if not isinstance(entry[key], str) or not entry[key].strip():
                 raise ValueError(f"Corpus {key} must be a non-blank string for {entry['id']}")
+        metadata = {key: value for key, value in entry.items() if key not in {"id", "text"}}
+        validate_and_freeze_metadata(metadata, require_json_containers=True)
 
 
 validate_corpus()
