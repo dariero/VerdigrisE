@@ -156,7 +156,9 @@ The corpus is a Python fixture, not a document-loader output:
 }
 ```
 
-The corpus must contain at least one entry. Every entry has a stable id, verbatim text, `grimoire_id`, `folio`, subject, fact type, and condition. The id, text, subject, fact type, and condition must each contain a non-whitespace character; validation checks presence without trimming or normalizing the stored values. At least one citation field must be populated. Either field may be `None`, but not both; every supplied string citation value must contain a non-whitespace character, and `folio` may also be an integer.
+The corpus must contain at least one entry. Every entry has a stable id, verbatim text, `grimoire_id`, `folio`, subject, fact type, and condition. The id, text, subject, fact type, and condition must each contain a non-whitespace character; validation checks presence without trimming or normalizing the stored values. At least one citation field must be populated. Either field may be `None`, but not both; every supplied string citation value must contain a non-whitespace character, and `folio` may also be an integer. IDs and evidence text must also be UTF-8 encodable so every accepted entry can be fingerprinted and persisted.
+
+The complete retrieval-metadata tree, including additional fields, must be acyclic and JSON-persistable: dictionaries with UTF-8 string keys, list or tuple sequences, and JSON scalar leaves with finite floats and UTF-8 strings. This contract is enforced before corpus embedding and at direct-index and persisted-load boundaries. Validation does not trim or rewrite accepted scalar values; JSON persistence represents both list and tuple sequences as arrays.
 
 ### Golden Cases
 
