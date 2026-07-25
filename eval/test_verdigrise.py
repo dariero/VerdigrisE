@@ -137,6 +137,15 @@ _QUESTION_VECTORS_BY_CASE_ID: dict[str, list[float]] = {
 }
 _CORPUS_TEXT_BY_ID = {entry["id"]: entry["text"] for entry in CORPUS}
 _CASE_ID_BY_QUESTION = {case.question: case.case_id for case in GOLDEN}
+# The one value each collision sibling contributes that its case must never report.
+# Coupled to the sibling's verbatim text, which the assertion re-checks on every run.
+_SIBLING_CONFLICT_LITERALS = {
+    "verdigris-dose-verdant": "3 drams",
+    "verdigris-dose-amber": "9 drams",
+    "verdigris-dose-obsidian": "15 drams",
+    "moonflower-golden-vapor": "17 grains",
+    "sunspire-orchid-harvest": "10 moon-phases",
+}
 
 
 class FixedEmbeddingProvider:
@@ -655,6 +664,44 @@ def test_near_synonym_pair_is_distinct_and_factually_conflicting() -> None:
     assert "golden waking vapor" in moonflower["text"]
 
 
+@pytest.mark.parametrize("case", QUALIFIED_CASES, ids=lambda case: case.case_id)
+def test_required_qualifiers_appear_in_the_expected_evidence_text(case: GoldenCase) -> None:
+    """A qualifier trap is only a trap while the evidence still states the qualifier.
+
+    The other qualifier assertions compare against the answer, which the free tier
+    supplies from `expected_answer`, so nothing else stops the corpus text from
+    dropping the condition the case exists to test.
+    """
+
+    assert case.expected_retrieved_id is not None
+    evidence = _CORPUS_TEXT_BY_ID[case.expected_retrieved_id]
+    for qualifier in case.required_qualifiers:
+        # Both sides are lower-cased: `conditional-shadeglass-direct-sun` declares
+        # "direct sun exposure" while the evidence opens that sentence with "Direct".
+        assert qualifier.lower() in evidence.lower(), (
+            f"{case.case_id} requires the qualifier {qualifier!r}, but "
+            f"{case.expected_retrieved_id} no longer states it"
+        )
+
+
+@pytest.mark.parametrize("case", COLLISION_CASES, ids=lambda case: case.case_id)
+def test_every_collision_sibling_conflict_literal_is_forbidden(case: GoldenCase) -> None:
+    """Forbidding the sibling's conflicting value is what makes a collision adversarial.
+
+    `test_each_dosage_case_forbids_every_non_target_source` enforces this for the three
+    dosage cases only, so the near-synonym and harvest families could silently lose
+    their numeric conflict guard.
+    """
+
+    for sibling_id in case.collision_sibling_ids:
+        literal = _SIBLING_CONFLICT_LITERALS[sibling_id]
+        assert literal in _CORPUS_TEXT_BY_ID[sibling_id]
+        assert literal in case.forbidden, (
+            f"{case.case_id} materializes {sibling_id} in context but does not forbid "
+            f"its conflicting value {literal!r}"
+        )
+
+
 @pytest.mark.parametrize("case", GOLDEN, ids=lambda case: case.case_id)
 def test_expected_source_and_rank_order(case: GoldenCase, records: dict[str, RagRecord]) -> None:
     record = records[case.case_id]
@@ -689,7 +736,10 @@ def test_near_synonym_target_ranks_above_collision_sibling(
     assert ranked.index(case.expected_retrieved_id) < ranked.index(case.collision_sibling_ids[0])
 
 
-@pytest.mark.parametrize("case", ANSWERABLE, ids=lambda case: case.case_id)
+# Parametrized over GOLDEN, not ANSWERABLE, so the abstention case's four declared
+# forbidden literals are executed rather than merely declared. Exact abstention already
+# subsumes them today; this keeps them live if that equality is ever relaxed.
+@pytest.mark.parametrize("case", GOLDEN, ids=lambda case: case.case_id)
 def test_required_and_forbidden_facts(case: GoldenCase, records: dict[str, RagRecord]) -> None:
     record = records[case.case_id]
     assert record.answer == case.expected_answer
