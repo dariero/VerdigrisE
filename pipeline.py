@@ -232,13 +232,13 @@ class NumpyVectorIndex:
             chunk_id = entry["id"]
             text = entry["text"]
             metadata = entry["metadata"]
-            if not isinstance(chunk_id, str) or not chunk_id:
-                raise ValueError("Indexed entry id must be a non-empty string")
+            if not isinstance(chunk_id, str) or not chunk_id.strip():
+                raise ValueError("Indexed entry id must be a non-blank string")
             if chunk_id in seen_ids:
                 raise ValueError(f"Duplicate indexed entry id: {chunk_id}")
             seen_ids.add(chunk_id)
-            if not isinstance(text, str) or not text:
-                raise ValueError(f"Indexed entry text is invalid for {chunk_id}")
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError(f"Indexed entry text must be a non-blank string for {chunk_id}")
             if not isinstance(metadata, dict):
                 raise ValueError(f"Indexed entry metadata is invalid for {chunk_id}")
             if not {"grimoire_id", "folio"}.issubset(metadata):

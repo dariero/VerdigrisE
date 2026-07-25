@@ -1909,6 +1909,29 @@ def test_index_constructor_rejects_invalid_identity(
 
 
 @pytest.mark.parametrize(
+    ("field", "message"),
+    [
+        pytest.param(
+            "id",
+            "Indexed entry id must be a non-blank string",
+            id="blank-id",
+        ),
+        pytest.param(
+            "text",
+            "Indexed entry text must be a non-blank string",
+            id="blank-text",
+        ),
+    ],
+)
+def test_index_rejects_blank_id_or_text(field: str, message: str) -> None:
+    index = NumpyVectorIndex(dimension=1, embedding_model=EMBEDDING_MODEL)
+    entry = _entry_with_updates(**{field: " \t\n"})
+
+    with pytest.raises(ValueError, match=message):
+        index.index([entry], np.asarray([[1.0]], dtype=np.float32))
+
+
+@pytest.mark.parametrize(
     "matrix",
     [
         pytest.param([], id="not-an-array"),
@@ -2051,6 +2074,24 @@ def test_index_roundtrip_accepts_one_populated_citation_field(
     assert chunk.metadata["folio"] == folio
 
 
+def test_index_roundtrip_preserves_padded_nonblank_id_and_text(tmp_path: Path) -> None:
+    entry = _entry_with_updates(
+        id="  padded-id  ",
+        text="  Verbatim evidence.  ",
+    )
+    index = NumpyVectorIndex(dimension=1, embedding_model=EMBEDDING_MODEL)
+    index.index([entry], np.asarray([[1.0]], dtype=np.float32))
+    index.save(tmp_path)
+
+    chunk = NumpyVectorIndex.load(tmp_path).search(
+        np.asarray([1.0], dtype=np.float32),
+        top_k=1,
+    )[0]
+
+    assert chunk.id == entry["id"]
+    assert chunk.text == entry["text"]
+
+
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [
@@ -2058,9 +2099,11 @@ def test_index_roundtrip_accepts_one_populated_citation_field(
         pytest.param("empty-list", "non-empty list", id="entries-empty"),
         pytest.param("entry-not-object", "contain id, text, and metadata", id="entry-not-object"),
         pytest.param("missing-field", "contain id, text, and metadata", id="missing-field"),
-        pytest.param("empty-id", "non-empty string", id="empty-id"),
+        pytest.param("empty-id", "non-blank string", id="empty-id"),
+        pytest.param("blank-id", "non-blank string", id="blank-id"),
         pytest.param("duplicate-id", "Duplicate indexed entry id", id="duplicate-id"),
-        pytest.param("empty-text", "text is invalid", id="empty-text"),
+        pytest.param("empty-text", "text must be a non-blank string", id="empty-text"),
+        pytest.param("blank-text", "text must be a non-blank string", id="blank-text"),
         pytest.param("metadata-not-object", "metadata is invalid", id="metadata-not-object"),
         pytest.param("missing-citation", "missing citation fields", id="missing-citation"),
         pytest.param("invalid-grimoire", "grimoire_id is invalid", id="invalid-grimoire"),
@@ -2099,12 +2142,16 @@ def test_index_load_rejects_invalid_entries(tmp_path: Path, mutation: str, messa
             entry.pop("metadata")
         elif mutation == "empty-id":
             entry["id"] = ""
+        elif mutation == "blank-id":
+            entry["id"] = " \t\n"
         elif mutation == "duplicate-id":
             second = entries[1]
             assert isinstance(second, dict)
             second["id"] = entry["id"]
         elif mutation == "empty-text":
             entry["text"] = ""
+        elif mutation == "blank-text":
+            entry["text"] = " \t\n"
         elif mutation == "metadata-not-object":
             entry["metadata"] = []
         else:
