@@ -28,3 +28,25 @@ description: "Safely evolve VerdigrisE's executable corpus, adversarial golden c
     ```
 
     Use `run-paid-evaluation` only after separate approval for a specific paid invocation.
+11. Prove that every assertion you added or changed can fail. A green suite shows an assertion runs, not that it constrains anything, and an assertion that reads a value from the artifact under test and compares it against itself passes forever.
+
+    For each one, name the single edit that should break it, then execute this loop:
+
+    ```bash
+    git status --porcelain -- <target file>   # begin only from a state you can restore exactly
+    saved="$(mktemp)"; cp <target file> "$saved"
+    trap 'cp "$saved" <target file>' EXIT INT TERM   # interruption must not leave the mutation behind
+    # apply exactly one minimal edit to the value the assertion claims to protect
+    .venv/bin/python -m pytest eval/ -m "not openai and not rag_test" -q   # expect the named assertion to FAIL
+    cp "$saved" <target file>                 # restore those exact bytes, and nothing else
+    trap - EXIT INT TERM
+    .venv/bin/python -m pytest eval/ -m "not openai and not rag_test" -q   # expect green again
+    ```
+
+    Select the free markers explicitly on both runs rather than relying on the default. A counterfactual may mutate the very setting that supplies that default, and the safety boundary must not depend on the value under test. Removing the `addopts` exclusion and then running an unqualified `pytest eval/ -q` selects the paid nodes: with provider keys exported that can make unapproved calls, and without them collection aborts before the named assertion ever runs, so the counterfactual proves nothing either way.
+
+    Do not revert with `git checkout -- <target file>`. That overwrites the file from the index and discards every unstaged edit in it, including unrelated user work this repository requires you to preserve. Staging those hunks to protect them would break the atomic change instead. Restoring the saved bytes is the only reversal that touches nothing but the mutation, and the trap is what keeps that promise when the run is interrupted between the mutation and the restore.
+
+    Record the mutation and the resulting `FAILED` node id in the pull-request body. Mutate one value at a time, and confirm with `git status --porcelain` that the file's state matches what it was before you began. Never use a paid tier for this; the free suite is what distinguishes a load-bearing assertion from a decorative one.
+
+    Reasoning that an assertion would fail does not satisfy this step. The assertions this repository has lost to self-comparison all looked correct when read. If the loop comes back green, the assertion is not protecting the value it names, and the fix belongs in this change rather than a later one.
