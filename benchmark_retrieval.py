@@ -93,7 +93,9 @@ DEFAULT_WIDTHS = (12, 128, 1_536)
 OPERATING_POINT_ROWS = 8
 OPERATING_POINT_WIDTH = 12
 CROSSOVER_ROWS = tuple(range(6, 49, 2))
-CROSSOVER_TRIALS = 5
+DEFAULT_REPEATS = 21
+DEFAULT_TRIALS = 5
+CROSSOVER_TRIALS = DEFAULT_TRIALS
 _NORMALIZE_BLOCK_ROWS = 4_096
 # getrusage reports bytes on macOS and kilobytes on Linux.
 _MAXRSS_DIVISOR = 2**20 if sys.platform == "darwin" else 2**10
@@ -156,6 +158,35 @@ def _median_ms(operation: Callable[[], object], repeats: int) -> float:
     return statistics.median(samples)
 
 
+def measure(rows: int, width: int, repeats: int, trials: int = DEFAULT_TRIALS) -> dict[str, float]:
+    """Aggregate `trials` independent trials, reporting medians and spread.
+
+    A repetition inside one trial re-times the same arrays; a trial rebuilds
+    them. Only the second captures allocation placement and cache residency,
+    which is where most of the run-to-run variation lives, so the published
+    precision has to come from trials rather than from repetitions. The spread
+    returned here is what licenses the number of digits the README prints.
+    """
+
+    samples = [measure_once(rows, width, repeats) for _ in range(trials)]
+    aggregate: dict[str, float] = {
+        "rows": float(rows),
+        "width": float(width),
+        "resident_mib": samples[0]["resident_mib"],
+        "trials": float(trials),
+    }
+    for key in ("matmul_ms", "sort_ms", "search_ms"):
+        values = [sample[key] for sample in samples]
+        median = statistics.median(values)
+        aggregate[key] = median
+        aggregate[f"{key}_spread_pct"] = (
+            (max(values) - min(values)) / median * 100.0 if median else 0.0
+        )
+    total = aggregate["matmul_ms"] + aggregate["sort_ms"]
+    aggregate["sort_share"] = aggregate["sort_ms"] / total * 100.0 if total else 0.0
+    return aggregate
+
+
 def dispatch_floor(width: int, repeats: int) -> float:
     """Return the fixed per-call cost of the matrix product, with n = 1.
 
@@ -176,8 +207,8 @@ def dispatch_floor(width: int, repeats: int) -> float:
     return _median_ms(probe, repeats)
 
 
-def measure(rows: int, width: int, repeats: int) -> dict[str, float]:
-    """Time one search, and the two operations inside it, at this corpus size."""
+def measure_once(rows: int, width: int, repeats: int) -> dict[str, float]:
+    """Time one search, and the two operations inside it, in a single trial."""
 
     generator = np.random.default_rng(SEED)
     vectors = _unit_rows(rows, width, generator)
@@ -246,7 +277,7 @@ def resolve_crossover(
     for _ in range(trials):
         previous = None
         for count in CROSSOVER_ROWS:
-            record = measure(count, width, repeats)
+            record = measure_once(count, width, repeats)
             if record["sort_ms"] >= record["matmul_ms"]:
                 located.append(count)
                 break
@@ -276,10 +307,10 @@ def _print_environment() -> None:
     print()
 
 
-def _report_operating_point(repeats: int) -> None:
+def _report_operating_point(repeats: int, trials: int) -> None:
     """Print the breakdown at the size this repository actually runs."""
 
-    record = measure(OPERATING_POINT_ROWS, OPERATING_POINT_WIDTH, repeats)
+    record = measure(OPERATING_POINT_ROWS, OPERATING_POINT_WIDTH, repeats, trials)
     scaling = record["matmul_ms"] + record["sort_ms"]
     remainder = record["search_ms"] - scaling
     print(
@@ -298,7 +329,12 @@ def _report_operating_point(repeats: int) -> None:
     print("  the remainder is query normalization plus construction of TOP_K capture models\n")
 
 
-def run(rows: Sequence[int], widths: Sequence[int], repeats: int) -> list[dict[str, float]]:
+def run(
+    rows: Sequence[int],
+    widths: Sequence[int],
+    repeats: int,
+    trials: int = DEFAULT_TRIALS,
+) -> list[dict[str, float]]:
     _print_environment()
 
     print("fixed per-call cost of the matrix product, measured at n = 1")
@@ -306,7 +342,7 @@ def run(rows: Sequence[int], widths: Sequence[int], repeats: int) -> list[dict[s
         print(f"  d = {width:>5}   {dispatch_floor(width, repeats):.5f} ms")
     print("  flat across d confirms this is dispatch, not arithmetic\n")
 
-    _report_operating_point(repeats)
+    _report_operating_point(repeats, trials)
 
     print("crossover, resolved on a step-2 grid and repeated to expose timing noise")
     print(f"  {'width':>7} {'bracket':>18} {'grid step':>11}   trials")
@@ -321,17 +357,22 @@ def run(rows: Sequence[int], widths: Sequence[int], repeats: int) -> list[dict[s
         print(f"vector width d = {width}")
         header = (
             f"  {'rows n':>9} {'resident MiB':>13} {'matmul ms':>11} "
-            f"{'py sort ms':>11} {'search ms':>11} {'sort share':>11}"
+            f"{'py sort ms':>11} {'search ms':>11} {'sort share':>11} {'max spread':>11}"
         )
         print(header)
         print("  " + "-" * (len(header) - 2))
         for count in rows:
-            record = measure(count, width, repeats)
+            record = measure(count, width, repeats, trials)
             results.append(record)
+            worst = max(
+                record["matmul_ms_spread_pct"],
+                record["sort_ms_spread_pct"],
+                record["search_ms_spread_pct"],
+            )
             print(
                 f"  {count:>9,} {record['resident_mib']:>13.2f} {record['matmul_ms']:>11.4f} "
                 f"{record['sort_ms']:>11.4f} {record['search_ms']:>11.4f} "
-                f"{record['sort_share']:>10.1f}%"
+                f"{record['sort_share']:>10.1f}% {worst:>10.1f}%"
             )
         crossover = next(
             (int(r["rows"]) for r in results if r["width"] == width and r["sort_share"] > 50.0),
@@ -365,9 +406,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--rows", type=int, nargs="+", default=list(DEFAULT_ROWS))
     parser.add_argument("--widths", type=int, nargs="+", default=list(DEFAULT_WIDTHS))
-    parser.add_argument("--repeats", type=int, default=7)
+    parser.add_argument("--repeats", type=int, default=DEFAULT_REPEATS)
+    parser.add_argument("--trials", type=int, default=DEFAULT_TRIALS)
     args = parser.parse_args(argv)
-    run(args.rows, args.widths, args.repeats)
+    run(args.rows, args.widths, args.repeats, args.trials)
     return 0
 
 
