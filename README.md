@@ -531,17 +531,17 @@ The decision-relevant number is absolute latency for a single query, and it is s
 | 8, the shipped corpus | tens of microseconds |
 | 1,000 | a few hundred microseconds |
 | 10,000 | single-digit milliseconds |
-| 100,000 | tens of milliseconds |
+| 100,000 | tens of milliseconds, occasionally past 100 |
 
 No numeric interval is published, and that is a result rather than caution. Two earlier revisions tried: first single values, then the lowest and highest of nine runs per cell with endpoints rounded outward. Both were falsified by the next run. The nine-run ranges were checked cell by cell to contain every observation behind them, and a single further run from a clean clone landed outside four of nine cells immediately.
 
-Run-to-run spread reaches 41% at 100,000 entries, which is larger than the differences a reader would want an interval to resolve, so any interval drawn from a finite sample is a statement about that sample rather than about the system. Order of magnitude is what survives: it held across every one of thirty runs at sizes up to 10,000 entries and nine at 100,000, using the documented command.
+Run-to-run spread reaches 41% at 100,000 entries, which is larger than the differences a reader would want an interval to resolve, so any interval drawn from a finite sample is a statement about that sample rather than about the system. Order of magnitude is what survives, and it is stated with its edge rather than as a clean decade. The first three labels held across every one of thirty runs using the documented command. At 100,000 entries nine runs spanned 50.09 to 101.59 ms, so that row crosses out of the tens and its label says so; treating it as a clean decade would repeat in one word the error the intervals made in two numbers.
 
 One comparison is robust enough to state. Wider vectors are consistently slower at every size measured: the `d` = 12 and `d` = 1536 observations never overlapped at any corpus size, though both stay within the same order of magnitude. The slowest single observation anywhere was about 102 ms, at 100,000 entries and `d` = 1536.
 
 This is the same standard already applied to the crossover above, retracted rather than re-bracketed once trial noise exceeded the gap being measured.
 
-Read against a threshold a reader supplies: single-query search is tens of microseconds at the shipped corpus size, a few hundred microseconds at 1,000 entries, single-digit milliseconds at 10,000, and tens of milliseconds at 100,000. The resident matrix at `n` = 100,000 and `d` = 1536 is 585.94 MiB, which is exact arithmetic on row count and width rather than a timing, and is the one figure here that carries full precision.
+Read against a threshold a reader supplies: single-query search is tens of microseconds at the shipped corpus size, a few hundred microseconds at 1,000 entries, single-digit milliseconds at 10,000, and tens of milliseconds at 100,000, with the slowest of nine observations at about 102. The resident matrix at `n` = 100,000 and `d` = 1536 is 585.94 MiB, which is exact arithmetic on row count and width rather than a timing, and is the one figure here that carries full precision.
 
 One measured fact inverts the expected answer and is the one that applies today. At the size this sandbox actually runs, 8 entries at width 12, the matrix product and the sort together are about 0.0037 ms of an approximately 0.030 ms search, so the two operations that scale account for **at most about an eighth** of it.
 
