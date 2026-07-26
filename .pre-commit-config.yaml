@@ -69,3 +69,12 @@ repos:
           - eval/ragaliq_adapter.py
         pass_filenames: false
         always_run: true
+      # Renaming a constant in a tracked module can invalidate a reference in a
+      # policy file the same commit never touches, so this reads the whole set
+      # rather than the changed files, exactly as the mypy hook above does.
+      - id: agent-policy-symbols
+        name: agent policy names only defined symbols
+        entry: uv run --no-sync python -m eval.check_agent_policy_symbols
+        language: unsupported
+        pass_filenames: false
+        always_run: true
