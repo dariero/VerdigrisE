@@ -24,11 +24,10 @@ htmlcov/
 .ruff_cache/
 *.log
 
-# Generated audit and analysis reports written at the repository root
-verdigrise-*-analysis.md
-verdigrise-*-audit.md
-verdigrise-*-report.md
-docs-draft-*.md
+# Generated audit and analysis reports, written at the repository root only
+/verdigrise-*-analysis.md
+/verdigrise-*-audit.md
+/verdigrise-*-report.md
 
 # Operating-system, editor, and temporary files
 .DS_Store
