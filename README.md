@@ -41,8 +41,6 @@ This is not hypothetical here. A mutation sweep of the free suite found that eve
 
 The repairs are visible in the suite. `test_required_qualifiers_appear_in_the_expected_evidence_text` (`eval/test_verdigrise.py:710`) now checks the qualifier against the corpus text rather than against the answer. `test_every_collision_sibling_conflict_literal_is_forbidden` (`:730`) checks completeness of every trap family rather than one. `test_corpus_order_is_pinned` (`:412`) and `test_condition_metadata_is_pinned` (`:431`) pin fixture data that was previously free to drift.
 
-One example survives, and it is left visible rather than quietly removed. `eval/test_verdigrise.py:1647` asserts `index.indexed_corpus_sha256 == NumpyVectorIndex.corpus_sha256(CORPUS)`. Both sides are computed by the object under test, from the same input, by the same function. It cannot fail.
-
 Because reading an assertion is not enough to tell the two apart, `.agents/skills/maintain-golden-contract/SKILL.md:31-52` makes the proof mechanical. Every new or changed assertion must name the single edit that should break it, and that edit must actually be executed: snapshot the file's bytes, apply one minimal mutation, run the free suite with markers selected explicitly, confirm the named node FAILS, restore the exact bytes, confirm green, and record the FAILED node id in the pull-request body.
 
 Reasoning that an assertion would fail does not satisfy the step. If the loop comes back green, it has not proved the assertion is fine. It has found a defect.
