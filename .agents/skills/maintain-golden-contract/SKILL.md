@@ -12,7 +12,7 @@ description: "Safely evolve VerdigrisE's executable corpus, adversarial golden c
 3. Treat corpus order, stable ids, verbatim text, citation metadata, conditions, and genuine absence as contract data. Do not casually rename, reorder, normalize, or paraphrase them.
 4. Update only the coupled data affected by the requested contract:
    - For a corpus-entry change, update `CORPUS` with its `_CORPUS_VECTORS` row and every dependent golden expectation.
-   - For a case-only change, update `GOLDEN_CASES` with its `_QUESTION_VECTORS` row; do not rewrite unchanged corpus data or vectors.
+   - For a case-only change, update `GOLDEN_CASES` with its `_QUESTION_VECTORS_BY_CASE_ID` row; do not rewrite unchanged corpus data or vectors.
    - Update `GoldenCase` validation or deterministic assertions only when the schema or ownership contract changes.
    - Keep expected ranked ids, collision siblings, required and forbidden literals, qualifiers, citations, answers, and abstention state internally consistent.
 5. Ensure every declared collision sibling reaches top-2 context and that the intended source ranks correctly. Preserve `distance = 1 - cosine_similarity` and stable-id tie-breaking unless deliberately changing the retrieval contract.
