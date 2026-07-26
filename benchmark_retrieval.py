@@ -326,7 +326,11 @@ def _report_operating_point(repeats: int, trials: int) -> None:
         f"  everything else         {remainder:.4f} ms "
         f"({remainder / record['search_ms'] * 100:.1f}% of search)"
     )
-    print("  the remainder is query normalization plus construction of TOP_K capture models\n")
+    print(
+        "  the remainder is unassigned: it holds query normalization and capture-model\n"
+        "  construction, but also the allocation this isolated matmul avoids and other\n"
+        "  per-call overhead, so it is not a decomposition\n"
+    )
 
 
 def run(
