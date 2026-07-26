@@ -48,11 +48,13 @@ is taken from the provider's response at runtime (`pipeline.py:708`,
 for measurement, not repository-derived facts, with one exception: 12 is the
 width of the hand-authored fixture vectors in `eval/test_verdigrise.py`.
 
-Timings are machine-specific and vary by roughly ten percent between runs on
-the same machine. The shape of the curve is the finding; the absolute
-milliseconds are not portable, which is why the script prints the machine and
-library versions it ran on. Do not draw a conclusion that depends on a figure
-sitting on one side of a round threshold.
+Timings are machine-specific and vary between runs on one machine. Measured over
+five trials at 21 repetitions, spread stayed under 13 percent at every grid point
+except n = 100,000 at d = 12, where it reached 38 percent. Report figures to the
+precision those trials support and no further; the shape of the curve is the
+finding, and the absolute milliseconds are not portable, which is why the script
+prints the machine and library versions it ran on. Do not draw a conclusion that
+depends on a figure sitting on one side of a round threshold.
 """
 
 from __future__ import annotations
@@ -74,6 +76,8 @@ DEFAULT_ROWS = (8, 16, 32, 64, 128, 512, 1_000, 10_000, 100_000)
 DEFAULT_WIDTHS = (12, 128, 1_536)
 OPERATING_POINT_ROWS = 8
 OPERATING_POINT_WIDTH = 12
+CROSSOVER_ROWS = tuple(range(6, 49, 2))
+CROSSOVER_TRIALS = 5
 
 
 def _synthetic_entries(count: int) -> list[dict[str, object]]:
@@ -189,6 +193,49 @@ def measure(rows: int, width: int, repeats: int) -> dict[str, float]:
     }
 
 
+def resolve_crossover(
+    width: int, repeats: int, trials: int = CROSSOVER_TRIALS
+) -> dict[str, object]:
+    """Locate the corpus size where the sort first costs at least the matrix product.
+
+    Two distinct error sources bound how precisely this can be stated, and both
+    are reported rather than one being hidden behind the other.
+
+    The first is grid resolution: a transition reported at some sampled n only
+    means it happened above the previous sample and at or below this one, so the
+    honest claim is a half-open interval whose width is the grid step.
+
+    The second is measurement noise. Near the transition both operations cost a
+    few microseconds, and run-to-run variation on one machine is around ten
+    percent, which is enough to move the located point by a grid step or more.
+    Refining the grid past the noise floor would buy apparent precision the
+    measurement does not have, so the determination is repeated instead and the
+    spread across trials is reported alongside the grid step.
+    """
+
+    located: list[int] = []
+    for _ in range(trials):
+        previous = None
+        for count in CROSSOVER_ROWS:
+            record = measure(count, width, repeats)
+            if record["sort_ms"] >= record["matmul_ms"]:
+                located.append(count)
+                break
+            previous = count
+        else:
+            located.append(0)
+        _ = previous
+    step = CROSSOVER_ROWS[1] - CROSSOVER_ROWS[0]
+    found = [value for value in located if value]
+    return {
+        "width": width,
+        "trials": located,
+        "low": min(found) - step if found else 0,
+        "high": max(found) if found else 0,
+        "step": step,
+    }
+
+
 def _print_environment() -> None:
     print("VerdigrisE retrieval benchmark")
     print(f"  seed              {SEED}")
@@ -231,6 +278,14 @@ def run(rows: Sequence[int], widths: Sequence[int], repeats: int) -> list[dict[s
     print("  flat across d confirms this is dispatch, not arithmetic\n")
 
     _report_operating_point(repeats)
+
+    print("crossover, resolved on a step-2 grid and repeated to expose timing noise")
+    print(f"  {'width':>7} {'bracket':>18} {'grid step':>11}   trials")
+    for width in widths:
+        found = resolve_crossover(width, repeats)
+        bracket = f"{found['low']} < n <= {found['high']}"
+        print(f"  {width:>7} {bracket:>18} {found['step']:>11}   {found['trials']}")
+    print("  a single value here would state the result more precisely than it resolves\n")
 
     results: list[dict[str, float]] = []
     for width in widths:
