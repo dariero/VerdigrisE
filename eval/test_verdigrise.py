@@ -46,6 +46,7 @@ from config import (
     TOP_K,
 )
 from corpus import CORPUS, GOLDEN_CASES, CorpusEntry, validate_corpus
+from eval import check_agent_policy_symbols
 from eval import conftest as eval_conftest
 from eval.ragaliq_adapter import (
     CannedJudgeTransport,
@@ -3282,6 +3283,21 @@ def test_every_tracked_top_level_path_is_documented() -> None:
 
     undocumented = sorted(path for path in top_level if path not in readme)
     assert undocumented == [], f"README does not mention tracked paths: {undocumented}"
+
+
+def test_agent_policy_names_only_defined_symbols() -> None:
+    """Policy that names a constant nothing defines sends a reader to nothing.
+
+    The pre-commit hook owns the commit-time boundary; this owns the suite
+    boundary, so a clone that never installs the hook still catches the drift.
+    Both call the same function, so there is one definition of the invariant.
+    """
+
+    unresolved = check_agent_policy_symbols.violations()
+    assert unresolved == [], (
+        "Agent policy references symbols that no tracked module binds: "
+        + ", ".join(f"{path}:{lineno} {token}" for path, lineno, token in unresolved)
+    )
 
 
 def _build_ingested_pipeline(

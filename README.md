@@ -332,6 +332,7 @@ RagaliQ's native pytest plugin supplies `rag_tester`, `ClaudeJudge`, retrying tr
 ├── uv.lock                      # Solver decisions and dependency graph
 └── eval/
     ├── __init__.py
+    ├── check_agent_policy_symbols.py  # Resolves agent-policy symbol references against tracked source
     ├── conftest.py              # Flat-module imports and fail-closed paid-credential preflight
     ├── ragaliq_adapter.py       # Canned structural transport and case mapping
     └── test_verdigrise.py       # Exact, provider-acceptance, and semantic tiers
@@ -363,7 +364,7 @@ For compatibility, `load()` also accepts the previous root-level `manifest.json`
 
 ## Development
 
-Ruff is the repository's formatter and linter. Mypy strictly checks the application modules and RagaliQ adapter. Pytest-cov measures branch coverage over the same application/adapter scope and enforces a clean integer `fail_under = 95`; paid provider paths remain excluded. Pre-commit runs the static tools and repository-hygiene hooks before commits. Every hook uses `uv run --no-sync` and the hash-locked `.venv`; hook execution does not create separate environments or resolve additional packages. The sandbox still has no build backend, package-publication layer, or task runner. uv owns environment creation and exact dependency synchronization.
+Ruff is the repository's formatter and linter. Mypy strictly checks the application modules and RagaliQ adapter. Pytest-cov measures branch coverage over the same application/adapter scope and enforces a clean integer `fail_under = 95`; paid provider paths remain excluded. Pre-commit runs the static tools, the repository-hygiene hooks, and one repository-specific gate before commits: `agent-policy-symbols` runs `eval/check_agent_policy_symbols.py`, which resolves every backticked symbol reference in `AGENTS.md` and `.agents/skills/*/SKILL.md` against the names tracked modules actually bind, so a procedure file cannot keep naming a constant that was renamed. It runs over the whole set rather than the changed files, because renaming a constant in a module invalidates a reference in a policy file the same commit never touches. The same check runs as a free-suite node, so a clone that never installs the hook still catches the drift. Every hook uses `uv run --no-sync` and the hash-locked `.venv`; hook execution does not create separate environments or resolve additional packages. The sandbox still has no build backend, package-publication layer, or task runner. uv owns environment creation and exact dependency synchronization.
 
 GitHub Actions validates every ready pull request against its prospective merge result and validates `main` after each merge. CI installs the hash-locked Python 3.14 environment from a clean checkout, validates the pre-commit configuration, runs every repository hook, and runs the deterministic branch-coverage gate with OpenAI and RagaliQ paid markers explicitly excluded. Provider key variables are explicitly empty throughout the job, and the workflow does not reference provider secrets.
 
