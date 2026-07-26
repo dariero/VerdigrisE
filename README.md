@@ -491,6 +491,51 @@ The next rungs are intentionally visible but not implemented:
 
 VerdigrisE remains a sandbox: it does not claim PDF support, table extraction, production storage, web serving, generated reports, or deployment readiness.
 
+### What Each Untaken Rung Costs
+
+A list of next steps is indistinguishable from a list written without evaluating them. The table below states, for each rung this sandbox does not take, why it was not taken, what not taking it costs, and the scale at which that cost begins to bite. Measured rows come from `benchmark_retrieval.py`; unmeasured rows say so rather than estimating.
+
+Reproduce every measured number with:
+
+```bash
+.venv/bin/python benchmark_retrieval.py
+```
+
+It makes no provider calls, needs no API key, uses synthetic vectors from a pinned seed, and prints the machine and library versions it ran on. Timings are machine-specific; the shape of the curve is the finding, not the absolute milliseconds.
+
+| Rung not taken | Why | Cost of not taking it | Scale at which it bites |
+|---|---|---|---|
+| Vector database instead of an in-memory NumPy scan | Normalization, dot product, distance, and tie-breaking stay visible; a backend would mediate all four | The whole matrix is resident: `pipeline.py:206` stores `float32` rows, so `4 * n * d` bytes. No metadata filter, no incremental upsert, no query language | Measured 585.94 MiB at `n` = 100,000, `d` = 1536 |
+| Vectorized top-`k` selection instead of a total sort | `pipeline.py:417-420` sorts by `(-similarity, id)`, and expressing that exact documented tie-break as a readable key is worth more here than selection speed | The key is interpreted Python called once per row, and all `n` rows are ordered to return `TOP_K`, which is 2. This is the operation that ends the design, not the vector math | Measured: the sort exceeds the matrix product from `n` = 16 at `d` = 12 and `d` = 128, and from `n` = 32 at `d` = 1536. Both figures sit inside the overhead-dominated regime below and neither is a size at which anything fails. Where it matters is at scale: at `n` = 100,000, `d` = 1536 the sort is about 56 ms against about 21 ms for the matrix product |
+| Approximate nearest neighbour instead of exact search | Exact search has recall 1.0 and no index-build step or tuning parameters to explain | `pipeline.py:416` touches every row on every query. Latency is linear in `n` before the sort above dominates it | Measured: at `n` = 100,000 and `d` = 128 the matrix product is about 1 ms inside a search of about 57 ms, so exact search is not the binding constraint at any size this sandbox reaches |
+| Document ingestion and chunking | The corpus is an executable fixture, not loader output, so retrieval granularity is authoring granularity | There is no chunking code at all, so one entry is one indivisible unit and a long document cannot be represented. Growing the corpus means editing `corpus.py` by hand and hand-authoring a matching fixture vector | Binds immediately: the corpus is 8 entries and every one is hand-written |
+| Incremental index updates | An index that cannot change after construction cannot drift from its fingerprint | `pipeline.py:395-396` raises on a second `index()` call, so any corpus change re-embeds the entire corpus in one paid request | Binds at the first corpus edit |
+| Provider retry and backoff | Retries multiply spend, and an unbounded fan-out is worse here than a failed run | `OPENAI_MAX_RETRIES = 0` (`config.py:8`) means one transient network failure fails the whole invocation with no recovery. The 120-second timeout (`config.py:9`) is per operation, not a command deadline, and a timed-out request may still be billed | Binds on the first flaky connection |
+| Embedding cache | A cache would hide which calls are actually made, which is the thing this sandbox exists to show | Every `ask()` re-embeds its question. Asking the same question twice costs twice | Binds on the second identical query |
+| Request batching and concurrency | The synchronous path is readable top to bottom | `pipeline.py:130-134` sends the entire corpus as one `embeddings.create` call with no chunking and no size check, so the ceiling is the provider's per-request input limit rather than anything this repository sets. Not verifiable from repository source | Not measured; the limit is provider-side |
+| Compare-and-swap on the active pointer | Writer-unique staging, `fsync` chains, and atomic publication are taken; only revision checking is not | Two concurrent writers both succeed and the last `os.replace` wins, so a slower writer can overwrite a newer generation's activation | Binds with two concurrent writers |
+| Managed secrets | Keys are read from the process environment and nowhere else, which removes a whole class of accidental commit | `pipeline.py:91-96` reads `OPENAI_API_KEY` directly. No rotation, no scoping, no short-lived credentials, and `ask` output is content-bearing | Not measured; a policy limit rather than a scale limit |
+| Logging, tracing, and metrics | `--debug` prints shapes and stable ids and deliberately withholds text, vectors, and secrets | A failed paid run leaves no artifact except the pytest output. There is no timing, no event stream, and no way to reconstruct what a past run did | Not measured; binds the first time a paid run needs a post-mortem |
+| Packaging and deployment | `pyproject.toml:33` sets `package = false`, so the only interface is the documented commands | Not installable and has no entry point, which is also why every command carries a `.venv/bin/python` prefix and why Windows is not claimed | Not measured; binds on first use outside this checkout |
+
+Three regimes, not one crossover. A NumPy call costs something fixed before any arithmetic happens: argument parsing, dtype and shape resolution, and BLAS dispatch. Measured at one row, that floor is about 0.0026 ms and is the same at `d` = 12, `d` = 128, and `d` = 1536, because dispatch does not care how wide the vectors are. Below roughly a thousand rows the matrix product is measuring that floor rather than the arithmetic, which is why its cost barely moves across a 128-fold increase in width: 0.0025 ms against 0.0036 ms at `n` = 8. By `n` = 100,000 the same comparison is 0.15 ms against 21 ms, a factor of about 140, and the arithmetic is plainly in charge.
+
+That is why the sort-versus-matmul crossover is not a decision-relevant number. It falls at `n` = 16 to `n` = 32 depending on width, deep inside the regime where both operations are dwarfed by fixed overhead, and a reader who reads it as "this design fails at 16 documents" would be badly misled.
+
+The decision-relevant number is absolute latency for a single query, and it is stated here without a verdict because this repository sets no latency target. What counts as acceptable is a deployment decision that VerdigrisE does not make.
+
+| Corpus size | `d` = 12 | `d` = 128 | `d` = 1536 |
+|---|---|---|---|
+| 1,000 | 0.31 ms | 0.34 ms | 0.36 ms |
+| 10,000 | 3.6 ms | 4.0 ms | 6.0 ms |
+| 100,000 | 54 ms | 57 ms | 78 ms |
+
+Read against a threshold a reader supplies: single-query search stays below a millisecond somewhere between 1,000 and 10,000 entries at every width tested, and is single-digit milliseconds at 10,000. At 100,000 entries it is tens of milliseconds, and the resident matrix at `d` = 1536 is 585.94 MiB.
+
+Figures come from one run and vary by roughly ten percent between runs on the same machine, so treat any comparison that turns on a round threshold as unresolved rather than settled.
+
+One measured fact inverts the expected answer and is the one that applies today. At the size this sandbox actually runs, 8 entries at width 12, the matrix product and the sort together are 0.0041 ms of a 0.0327 ms search, which is about 12%. The other 88% is query normalization plus construction of the two `RetrievedChunk` capture models. At the real corpus size neither scaling operation matters, and optimizing either would change nothing.
+
 ---
 
 ## Why "VerdigrisE"?
