@@ -20,6 +20,35 @@ Production retrieval systems can hide source attribution errors behind fluent, g
 
 ---
 
+## Assertions That Cannot Fail
+
+A passing test proves an assertion ran. It does not prove the assertion constrains anything.
+
+The distinction has a name in QA practice. A *test case* exercises the system; an *assertion* is the claim inside it that must hold; a *quality gate* is the rule that stops a change when an assertion breaks. None of those three guarantees the fourth thing, which is the only one that matters: that the assertion would have failed had the behaviour been wrong. An assertion that would pass against a broken implementation is decorative. It costs the same to run as a real one and it reports the same green.
+
+The standard way to measure this is *mutation testing*: deliberately break the code, run the suite, and see whether it notices. A break the suite catches is a killed mutant, and it proves the assertion covering it is load-bearing. A break the suite ignores is a surviving mutant, and it names a defect class the suite cannot see. Line coverage cannot substitute for this, because a line executed by a tautological assertion is a covered line.
+
+VerdigrisE inverts the usual arrangement. In an ordinary project the mutants are hypothetical and a tool injects them. Here they are already planted, by hand, in `corpus.py`, and they are the fixture's entire reason for existing:
+
+- Three grimoires prescribe three conflicting doses for the same elixir, so an answer that cites the wrong source is a wrong number rather than a stylistic slip.
+- `moonpetal-silver-vapor` and `moonflower-golden-vapor` (`corpus.py:47`, `corpus.py:59`) are near-synonyms with different quantities, so swapping them is undetectable by fluency.
+- `shadeglass-orchid-harvest` (`corpus.py:110`) carries a qualifier that is only valid when the plant was grown entirely in shade, so dropping the condition turns a correct value into a wrong instruction.
+- One golden case asks for a fact the corpus genuinely does not contain, so confident invention is a failure rather than a judgement call.
+
+The pipeline is the code under test. The evaluation suite is what is being validated. That inversion sets the standard: a green suite against a softened corpus has not passed, it has failed, and it has failed silently. Weakening a trap to make a test go green destroys the only evidence the test was ever producing.
+
+This is not hypothetical here. A mutation sweep of the free suite found that every assertion it failed to kill shared one shape: a value read from the artifact under test and compared against itself. Deleting the shade qualifier from the evidence text left the suite green, because the qualifier was asserted against `expected_answer`, which the fixture also authored. `FixedAnswerGenerator` (`eval/test_verdigrise.py:297`) returns `case.expected_answer` verbatim, so any assertion comparing the answer to the fixture's own literal is a statement about the fixture agreeing with itself. Each of those assertions looked correct when read. Each passed forever.
+
+The repairs are visible in the suite. `test_required_qualifiers_appear_in_the_expected_evidence_text` (`eval/test_verdigrise.py:710`) now checks the qualifier against the corpus text rather than against the answer. `test_every_collision_sibling_conflict_literal_is_forbidden` (`:730`) checks completeness of every trap family rather than one. `test_corpus_order_is_pinned` (`:412`) and `test_condition_metadata_is_pinned` (`:431`) pin fixture data that was previously free to drift.
+
+One example survives, and it is left visible rather than quietly removed. `eval/test_verdigrise.py:1647` asserts `index.indexed_corpus_sha256 == NumpyVectorIndex.corpus_sha256(CORPUS)`. Both sides are computed by the object under test, from the same input, by the same function. It cannot fail.
+
+Because reading an assertion is not enough to tell the two apart, `.agents/skills/maintain-golden-contract/SKILL.md:31-52` makes the proof mechanical. Every new or changed assertion must name the single edit that should break it, and that edit must actually be executed: snapshot the file's bytes, apply one minimal mutation, run the free suite with markers selected explicitly, confirm the named node FAILS, restore the exact bytes, confirm green, and record the FAILED node id in the pull-request body.
+
+Reasoning that an assertion would fail does not satisfy the step. If the loop comes back green, it has not proved the assertion is fine. It has found a defect.
+
+---
+
 ## Key Features
 
 | Capability | What It Does | How It Helps |
