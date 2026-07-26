@@ -48,6 +48,20 @@ is taken from the provider's response at runtime (`pipeline.py:708`,
 for measurement, not repository-derived facts, with one exception: 12 is the
 width of the hand-authored fixture vectors in `eval/test_verdigrise.py`.
 
+Memory. The default grid stops at n = 10,000, which peaks around 0.8 GiB. The
+n = 100,000 row published in the README is opt-in because it peaks around 5 GiB:
+
+    .venv/bin/python benchmark_retrieval.py --rows 1000 10000 100000
+
+That peak is not this script's to avoid. It belongs to `NumpyVectorIndex.index`,
+which calls `_normalize` (`pipeline.py:378-390`), and that holds the float32
+input, a float64 copy, a float64 quotient, and the float32 result at once, then
+revalidates through another float64 pass in `_unit_rows`. Peak ingest memory is
+therefore several times the resident matrix, which is a real and deliberate cost
+of the float64 accumulator that keeps float32 extremes from collapsing, not an
+artefact of measurement. This script generates its own rows as float32 and
+normalizes them in blocks so it adds nothing avoidable on top.
+
 Timings are machine-specific and vary between runs on one machine. Measured over
 five trials at 21 repetitions, spread stayed under 13 percent at every grid point
 except n = 100,000 at d = 12, where it reached 38 percent. Report figures to the
@@ -61,6 +75,7 @@ from __future__ import annotations
 
 import argparse
 import platform
+import resource
 import statistics
 import sys
 import time
@@ -72,12 +87,16 @@ from config import TOP_K
 from pipeline import NumpyVectorIndex
 
 SEED = 20260726
-DEFAULT_ROWS = (8, 16, 32, 64, 128, 512, 1_000, 10_000, 100_000)
+DEFAULT_ROWS = (8, 16, 32, 64, 128, 512, 1_000, 10_000)
+LARGEST_MEASURED_ROWS = 100_000
 DEFAULT_WIDTHS = (12, 128, 1_536)
 OPERATING_POINT_ROWS = 8
 OPERATING_POINT_WIDTH = 12
 CROSSOVER_ROWS = tuple(range(6, 49, 2))
 CROSSOVER_TRIALS = 5
+_NORMALIZE_BLOCK_ROWS = 4_096
+# getrusage reports bytes on macOS and kilobytes on Linux.
+_MAXRSS_DIVISOR = 2**20 if sys.platform == "darwin" else 2**10
 
 
 def _synthetic_entries(count: int) -> list[dict[str, object]]:
@@ -102,11 +121,21 @@ def _synthetic_entries(count: int) -> list[dict[str, object]]:
 
 
 def _unit_rows(rows: int, width: int, generator: np.random.Generator) -> np.ndarray:
-    """Return float32 rows the index will accept, normalized as ingestion would."""
+    """Return float32 rows the index will accept, normalized as ingestion would.
 
-    matrix = generator.standard_normal((rows, width)).astype(np.float32)
-    norms = np.linalg.norm(matrix.astype(np.float64), axis=1, keepdims=True)
-    return (matrix.astype(np.float64) / norms).astype(np.float32)
+    Generated directly as float32 and normalized in row blocks. The obvious
+    implementation, drawing float64 and converting, holds three full-size arrays
+    at once; at the largest default grid point that is over 2 GiB of avoidable
+    temporaries on top of the matrix itself. The float64 accumulator is still
+    used for the norm, matching `pipeline.py:378-390`, but only one block wide.
+    """
+
+    matrix = generator.standard_normal((rows, width), dtype=np.float32)
+    for start in range(0, rows, _NORMALIZE_BLOCK_ROWS):
+        block = matrix[start : start + _NORMALIZE_BLOCK_ROWS]
+        norms = np.linalg.norm(block.astype(np.float64), axis=1, keepdims=True)
+        block[:] = (block.astype(np.float64) / norms).astype(np.float32)
+    return matrix
 
 
 def _median_ms(operation: Callable[[], object], repeats: int) -> float:
@@ -319,7 +348,16 @@ def run(rows: Sequence[int], widths: Sequence[int], repeats: int) -> list[dict[s
     for count in rows:
         row = [next(r for r in results if r["rows"] == count and r["width"] == w) for w in widths]
         print(f"  {count:>9,} " + " ".join(f"{r['matmul_ms']:>13.4f}" for r in row))
-    print("  flat across a row means dispatch-bound; rising across a row means arithmetic-bound\n")
+    print("  flat across a row means dispatch-bound; rising across a row means arithmetic-bound")
+    peak_mib = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / _MAXRSS_DIVISOR
+    largest = max(rows) if rows else 0
+    print(f"\npeak process memory for this run: {peak_mib:.0f} MiB at n = {largest:,}")
+    if largest < LARGEST_MEASURED_ROWS:
+        print(
+            f"  the README also publishes n = {LARGEST_MEASURED_ROWS:,}, which is opt-in because it\n"
+            f"  peaks around 5 GiB: --rows 1000 10000 {LARGEST_MEASURED_ROWS}"
+        )
+    print()
     return results
 
 
