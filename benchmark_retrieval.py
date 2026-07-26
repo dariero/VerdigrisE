@@ -347,7 +347,7 @@ def run(
     print("crossover, resolved on a step-2 grid and repeated to expose timing noise")
     print(f"  {'width':>7} {'bracket':>18} {'grid step':>11}   trials")
     for width in widths:
-        found = resolve_crossover(width, repeats)
+        found = resolve_crossover(width, repeats, trials)
         bracket = f"{found['low']} < n <= {found['high']}"
         print(f"  {width:>7} {bracket:>18} {found['step']:>11}   {found['trials']}")
     print("  a single value here would state the result more precisely than it resolves\n")
