@@ -104,9 +104,7 @@ The public entry point is synchronous and returns the complete capture model:
 ```python
 from pipeline import ask
 
-record = ask(
-    "What quantity of pearl salt and which vapor are specified for ground moonpetal?"
-)
+record = ask("What quantity of pearl salt and which vapor are specified for ground moonpetal?")
 
 print(record.retrieved_ids)
 print(record.context_payload)
