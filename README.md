@@ -66,6 +66,8 @@ Reasoning that an assertion would fail does not satisfy the step. If the loop co
 
 VerdigrisE supports Python 3.14 (`>=3.14,<3.15`). RagaliQ 0.2.0 sets the same minimum, and Python 3.14 is the only version resolved and tested by this sandbox.
 
+Git 2.31 or newer is required for the development workflow. pre-commit 4.6.1 collects the working set with `git ls-files -z --deduplicate`, and `--deduplicate` was introduced in Git 2.31, so `pre-commit run --all-files` fails on older Git before any hook executes. The free suite, the coverage gate, and the installation commands above do not depend on this.
+
 Install [uv](https://docs.astral.sh/uv/), then create and synchronize the environment from the repository root:
 
 ```bash
