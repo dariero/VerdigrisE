@@ -3238,6 +3238,7 @@ def _tracked_paths() -> list[str]:
         cwd=eval_conftest.PROJECT_ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=True,
     )
     return completed.stdout.split()
