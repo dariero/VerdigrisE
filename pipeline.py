@@ -31,7 +31,9 @@ from config import (
     ABSTENTION_PHRASE,
     DISTANCE_DEFINITION,
     EMBEDDING_MODEL,
+    GENERATION_MAX_COMPLETION_TOKENS,
     GENERATION_MODEL,
+    GENERATION_REASONING_EFFORT,
     GENERATION_TEMPERATURE,
     INDEX_ACTIVE_FILENAME,
     INDEX_DIRECTORY,
@@ -181,12 +183,16 @@ class OpenAIAnswerGenerator:
 
     def generate(self, question: str, messages: list[PromptMessage]) -> str:
         del question  # The exact question is already present in messages.
-        response = self._client.chat.completions.create(
-            model=GENERATION_MODEL,
-            temperature=GENERATION_TEMPERATURE,
-            max_completion_tokens=300,
-            messages=[message.model_dump() for message in messages],
-        )
+        request: dict[str, object] = {
+            "model": GENERATION_MODEL,
+            "reasoning_effort": GENERATION_REASONING_EFFORT,
+            "max_completion_tokens": GENERATION_MAX_COMPLETION_TOKENS,
+            "messages": [message.model_dump() for message in messages],
+        }
+        if GENERATION_REASONING_EFFORT == "none":
+            # OpenAI: when reasoning effort is not "none", remove temperature.
+            request["temperature"] = GENERATION_TEMPERATURE
+        response = self._client.chat.completions.create(**request)
         return parse_generation_response(response)
 
 
