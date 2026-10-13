@@ -32,7 +32,9 @@ from config import (
     ABSTENTION_PHRASE,
     DISTANCE_DEFINITION,
     EMBEDDING_MODEL,
+    GENERATION_MAX_COMPLETION_TOKENS,
     GENERATION_MODEL,
+    GENERATION_REASONING_EFFORT,
     GENERATION_TEMPERATURE,
     INDEX_ACTIVE_FILENAME,
     INDEX_GENERATIONS_DIRECTORY,
@@ -2669,7 +2671,9 @@ def test_generation_policy_constants_are_pinned() -> None:
     """
 
     assert GENERATION_MODEL == "gpt-5.6-luna"
+    assert GENERATION_REASONING_EFFORT == "none"
     assert GENERATION_TEMPERATURE == 0.0
+    assert GENERATION_MAX_COMPLETION_TOKENS == 300
     assert EMBEDDING_MODEL == "text-embedding-3-small"
 
 
@@ -2897,6 +2901,14 @@ def _fake_generation_client(endpoint: _FakeCompletionsEndpoint) -> SimpleNamespa
     return SimpleNamespace(chat=SimpleNamespace(completions=endpoint))
 
 
+def _configured_sampling_kwargs() -> dict[str, object]:
+    """Temperature travels only with reasoning effort "none"; the shape test pins the rule."""
+
+    if GENERATION_REASONING_EFFORT == "none":
+        return {"temperature": GENERATION_TEMPERATURE}
+    return {}
+
+
 def test_cli_ask_runs_the_persisted_pipeline_without_provider_calls(
     tmp_path: Path,
     records: dict[str, RagRecord],
@@ -2953,9 +2965,10 @@ def test_cli_ask_runs_the_persisted_pipeline_without_provider_calls(
     }
     assert completion_endpoint.kwargs == {
         "model": GENERATION_MODEL,
-        "temperature": GENERATION_TEMPERATURE,
-        "max_completion_tokens": 300,
+        "reasoning_effort": GENERATION_REASONING_EFFORT,
+        "max_completion_tokens": GENERATION_MAX_COMPLETION_TOKENS,
         "messages": [message.model_dump() for message in records[case.case_id].generation_messages],
+        **_configured_sampling_kwargs(),
     }
 
 
@@ -2970,12 +2983,41 @@ def test_real_generation_adapter_preserves_structured_text_and_citations() -> No
     assert generator.generate("question", messages) == raw
     assert endpoint.kwargs == {
         "model": GENERATION_MODEL,
-        "temperature": GENERATION_TEMPERATURE,
-        "max_completion_tokens": 300,
+        "reasoning_effort": GENERATION_REASONING_EFFORT,
+        "max_completion_tokens": GENERATION_MAX_COMPLETION_TOKENS,
         "messages": [
             {"role": "system", "content": "system"},
             {"role": "user", "content": "user"},
         ],
+        **_configured_sampling_kwargs(),
+    }
+
+
+@pytest.mark.parametrize(
+    ("reasoning_effort", "sampling"),
+    [
+        pytest.param("none", {"temperature": GENERATION_TEMPERATURE}, id="none-sends-temperature"),
+        pytest.param("low", {}, id="low-omits-temperature"),
+    ],
+)
+def test_generation_request_sends_temperature_only_without_reasoning(
+    reasoning_effort: str,
+    sampling: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """OpenAI's latest-model guide: when reasoning effort is not "none", remove temperature."""
+
+    monkeypatch.setattr(pipeline_module, "GENERATION_REASONING_EFFORT", reasoning_effort)
+    endpoint = _FakeCompletionsEndpoint("answer")
+    generator = OpenAIAnswerGenerator(_fake_generation_client(endpoint))
+
+    assert generator.generate("question", [PromptMessage(role="user", content="user")]) == "answer"
+    assert endpoint.kwargs == {
+        "model": GENERATION_MODEL,
+        "reasoning_effort": reasoning_effort,
+        "max_completion_tokens": GENERATION_MAX_COMPLETION_TOKENS,
+        "messages": [{"role": "user", "content": "user"}],
+        **sampling,
     }
 
 
