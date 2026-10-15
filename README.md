@@ -241,7 +241,7 @@ raw corpus dictionary
   -> deterministic cosine top-2
   -> rank-ordered RetrievedChunk values
   -> verbatim citation-labelled context payload
-  -> gpt-5.6-luna generation, reasoning effort none, temperature 0
+  -> gpt-6.1-sol generation, reasoning effort medium, no temperature sent
   -> complete RagRecord
   -> deterministic assertions
   -> RagaliQ faithfulness and relevance residue
