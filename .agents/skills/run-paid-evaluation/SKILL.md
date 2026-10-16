@@ -14,7 +14,7 @@ description: "Run VerdigrisE's opt-in live OpenAI and RagaliQ Claude paths under
 
    Stop on deterministic failure; do not spend provider calls to diagnose a broken exact layer.
 2. Select exactly one paid command. Before requesting approval, report the exact command, selected cases, provider key names, models, the maximum OpenAI SDK attempt fan-out under `max_retries=0`, the 120-second per-network-operation OpenAI timeout, separate RagaliQ/Anthropic retry uncertainty, and timeout/cost uncertainty without displaying credential values:
-   - Full OpenAI all-golden acceptance uses `text-embedding-3-small` for one corpus batch and seven query embeddings, then `gpt-5.6-luna` for seven generations: at most 15 OpenAI SDK attempts.
+   - Full OpenAI all-golden acceptance uses `text-embedding-3-small` for one corpus batch and seven query embeddings, then `gpt-6.1-sol` for seven generations: at most 15 OpenAI SDK attempts.
    - Full cross-family semantic evaluation uses one corpus batch, six query embeddings, and six generations: at most 13 OpenAI SDK attempts. It then evaluates six answerable cases with RagaliQ's installed `DEFAULT_JUDGE_MODEL`.
    - Selecting `n` parametrized nodes from one paid tier makes at most `1 + 2n` OpenAI SDK attempts: one shared corpus embedding and `n` query-and-generation pairs. A single selected node therefore makes at most 3 OpenAI SDK attempts. For `n` selected semantic nodes, nominal Claude fan-out is `2n` base requests plus one verification request per extracted claim, so the total is model-output-dependent.
    - `pipeline.py ingest` makes at most one OpenAI SDK attempt. `pipeline.py ask` and live `ask()` each make at most one OpenAI query-embedding attempt and one generation attempt after an index exists.

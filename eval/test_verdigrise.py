@@ -2670,10 +2670,10 @@ def test_generation_policy_constants_are_pinned() -> None:
     and `OPENAI_TIMEOUT_SECONDS` below are already pinned this way.
     """
 
-    assert GENERATION_MODEL == "gpt-5.6-luna"
-    assert GENERATION_REASONING_EFFORT == "none"
+    assert GENERATION_MODEL == "gpt-6.1-sol"
+    assert GENERATION_REASONING_EFFORT == "medium"
     assert GENERATION_TEMPERATURE == 0.0
-    assert GENERATION_MAX_COMPLETION_TOKENS == 300
+    assert GENERATION_MAX_COMPLETION_TOKENS == 25000
     assert EMBEDDING_MODEL == "text-embedding-3-small"
 
 
