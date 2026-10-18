@@ -195,10 +195,10 @@ GOLDEN_CASES: list[GoldenCaseFixture] = [
             "administered at dawn?"
         ),
         "expected_retrieved_id": "verdigris-dose-amber",
-        "expected_ranked_ids": ["verdigris-dose-amber", "verdigris-dose-obsidian"],
-        "collision_sibling_ids": ["verdigris-dose-obsidian"],
+        "expected_ranked_ids": ["verdigris-dose-amber", "verdigris-dose-verdant"],
+        "collision_sibling_ids": ["verdigris-dose-verdant"],
         "expected_value": "9 drams",
-        "forbidden_values": ["15 drams"],
+        "forbidden_values": ["3 drams"],
         "expected_grimoire_id": "GRIM-AMBER",
         "required_qualifiers": ["distilled in amber glass", "administered at dawn"],
         "must_contain": [
