@@ -119,7 +119,7 @@ _CORPUS_VECTORS: dict[str, list[float]] = {
 }
 _QUESTION_VECTORS_BY_CASE_ID: dict[str, list[float]] = {
     "numeric-source-verdigris-dose": [4, 4, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    "numeric-source-amber-dose": [4, 0, 4, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+    "numeric-source-amber-dose": [4, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     "numeric-source-obsidian-dose": [4, 1, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0],
     "near-synonym-moonpetal-vapor": [0, 0, 0, 0, 4, 4, 1, 0, 0, 0, 0, 0],
     "conditional-shadeglass-harvest": [0, 0, 0, 0, 0, 0, 0, 4, 4, 1, 0, 0],
@@ -146,7 +146,6 @@ _CASE_ID_BY_QUESTION = {case.question: case.case_id for case in GOLDEN}
 _SIBLING_CONFLICT_LITERALS = {
     "verdigris-dose-verdant": "3 drams",
     "verdigris-dose-amber": "9 drams",
-    "verdigris-dose-obsidian": "15 drams",
     "moonflower-golden-vapor": "17 grains",
     "sunspire-orchid-harvest": "10 moon-phases",
 }
@@ -743,6 +742,20 @@ def test_every_collision_sibling_conflict_literal_is_forbidden(case: GoldenCase)
         assert literal in case.forbidden, (
             f"{case.case_id} materializes {sibling_id} in context but does not forbid "
             f"its conflicting value {literal!r}"
+        )
+
+
+def test_every_dosage_case_declares_a_collision_sibling() -> None:
+    """README states that each dosage case materializes a declared collision sibling.
+
+    Nothing else enforces "each": a dosage case with no sibling drops out of
+    `COLLISION_CASES`, and every sibling assertion then skips it without failing.
+    """
+
+    assert DOSAGE_CASES
+    for case in DOSAGE_CASES:
+        assert case.collision_sibling_ids, (
+            f"{case.case_id} declares no collision sibling to materialize in context"
         )
 
 

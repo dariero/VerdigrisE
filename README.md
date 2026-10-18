@@ -37,9 +37,9 @@ VerdigrisE inverts the usual arrangement. In an ordinary project the mutants are
 
 The pipeline is the code under test. The evaluation suite is what is being validated. That inversion sets the standard: a green suite against a softened corpus has not passed, it has failed, and it has failed silently. Weakening a trap to make a test go green destroys the only evidence the test was ever producing.
 
-This is not hypothetical here. A mutation sweep of the free suite found that every assertion it failed to kill shared one shape: a value read from the artifact under test and compared against itself. Deleting the shade qualifier from the evidence text left the suite green, because the qualifier was asserted against `expected_answer`, which the fixture also authored. `FixedAnswerGenerator` (`eval/test_verdigrise.py:299`) returns `case.expected_answer` verbatim, so any assertion comparing the answer to the fixture's own literal is a statement about the fixture agreeing with itself. Each of those assertions looked correct when read. Each passed forever.
+This is not hypothetical here. A mutation sweep of the free suite found that every assertion it failed to kill shared one shape: a value read from the artifact under test and compared against itself. Deleting the shade qualifier from the evidence text left the suite green, because the qualifier was asserted against `expected_answer`, which the fixture also authored. `FixedAnswerGenerator` (`eval/test_verdigrise.py:298`) returns `case.expected_answer` verbatim, so any assertion comparing the answer to the fixture's own literal is a statement about the fixture agreeing with itself. Each of those assertions looked correct when read. Each passed forever.
 
-The repairs are visible in the suite. `test_required_qualifiers_appear_in_the_expected_evidence_text` (`eval/test_verdigrise.py:712`) now checks the qualifier against the corpus text rather than against the answer. `test_every_collision_sibling_conflict_literal_is_forbidden` (`:732`) checks completeness of every trap family rather than one. `test_corpus_order_is_pinned` (`:414`) and `test_condition_metadata_is_pinned` (`:433`) pin fixture data that was previously free to drift.
+The repairs are visible in the suite. `test_required_qualifiers_appear_in_the_expected_evidence_text` (`eval/test_verdigrise.py:711`) now checks the qualifier against the corpus text rather than against the answer. `test_every_collision_sibling_conflict_literal_is_forbidden` (`:731`) checks completeness of every trap family rather than one. `test_corpus_order_is_pinned` (`:413`) and `test_condition_metadata_is_pinned` (`:432`) pin fixture data that was previously free to drift.
 
 Because reading an assertion is not enough to tell the two apart, `.agents/skills/maintain-golden-contract/SKILL.md:31-52` makes the proof mechanical. Every new or changed assertion must name the single edit that should break it, and that edit must actually be executed: snapshot the file's bytes, apply one minimal mutation, run the free suite with markers selected explicitly, confirm the named node FAILS, restore the exact bytes, confirm green, and record the FAILED node id in the pull-request body.
 
@@ -192,14 +192,14 @@ The complete retrieval-metadata tree, including additional fields, must be acycl
 | Case | Expected Evidence | Materialized Conflict or Gap |
 |---|---|---|
 | `numeric-source-verdigris-dose` | `3 drams`, copper, after dusk, `GRIM-VERDANT` | `9 drams`, amber glass, dawn, `GRIM-AMBER` |
-| `numeric-source-amber-dose` | `9 drams`, amber glass, dawn, `GRIM-AMBER` | `15 drams`, basalt, lunar eclipse, `GRIM-OBSIDIAN-PETAL` |
+| `numeric-source-amber-dose` | `9 drams`, amber glass, dawn, `GRIM-AMBER` | `3 drams`, copper, after dusk, `GRIM-VERDANT` |
 | `numeric-source-obsidian-dose` | `15 drams`, basalt, lunar eclipse, `GRIM-OBSIDIAN-PETAL` | `3 drams`, copper, after dusk, `GRIM-VERDANT` |
 | `near-synonym-moonpetal-vapor` | Moonpetal, `11 grains`, silver sleep vapor | Moonflower, `17 grains`, golden waking vapor |
 | `conditional-shadeglass-harvest` | `7 moon-phases` only when grown entirely in shade | `10 moon-phases` when grown in full sun |
 | `conditional-shadeglass-direct-sun` | Direct sun exposure invalidates the shadeglass harvest window | Sunspire permits `10 moon-phases` when grown in full sun |
 | `absent-moonpetal-dew-shelf-life` | Exact `INSUFFICIENT_CONTEXT` | No bottled-dew storage or spoilage duration exists |
 
-Each dosage case materializes one declared collision sibling in top-2 context and separately forbids answer leakage from both non-target dosage sources. The separate `asterquartz-powdering` entry supplies `Mohs hardness 8`. Corpus text preserves `drams`, `grains`, `moon-phases`, and `Mohs hardness` verbatim rather than normalizing units.
+Each dosage case materializes one declared collision sibling in top-2 context and separately forbids answer leakage from both non-target dosage sources. The amber and obsidian cases both materialize `verdigris-dose-verdant` as their conflicting source, because it is the nearest other dosage source for both questions under `text-embedding-3-small`. The separate `asterquartz-powdering` entry supplies `Mohs hardness 8`. Corpus text preserves `drams`, `grains`, `moon-phases`, and `Mohs hardness` verbatim rather than normalizing units.
 
 ---
 
