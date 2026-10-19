@@ -57,7 +57,7 @@ description: "Publish a completed VerdigrisE change by validating the atomic dif
     gh pr merge --auto --squash --match-head-commit "$pr_head" "$PR_NUMBER"
     ```
 
-    On the step 10 failure path only, use this block instead. It drops the three Codex lines of the block above and pins the head in their place: the fresh `headRefOid` must equal the head SHA recorded in step 10 before `--match-head-commit "$pr_head"` merges it. A push after the second error changes the head, so this block stops, and the push restarts step 10 with a new review request:
+    On the step 10 failure path only, use this block instead. It drops the three Codex lines of the block above and pins the head in their place: the fresh `headRefOid` must equal the head SHA recorded in step 10, and `--match-head-commit` binds the merge to that SHA. It merges directly, not with `--auto`, so the head is checked at the moment of merge and no pending auto-merge is left behind. If GitHub refuses because a requirement is not met yet, wait for it and run the block again; never add `--auto` or `--admin` on this path. A push after the second error changes the head, so this block stops, and the push restarts step 10 with a new review request:
 
     ```bash
     set -euo pipefail
@@ -65,7 +65,7 @@ description: "Publish a completed VerdigrisE change by validating the atomic dif
     : "${FAILED_HEAD:?set FAILED_HEAD to the head SHA recorded in step 10}"
     pr_head=$(gh pr view "$PR_NUMBER" --json headRefOid --jq .headRefOid)
     test "$pr_head" = "$FAILED_HEAD"
-    gh pr merge --auto --squash --match-head-commit "$pr_head" "$PR_NUMBER"
+    gh pr merge --squash --match-head-commit "$FAILED_HEAD" "$PR_NUMBER"
     ```
 
     Report any branch-protection, review, or check requirement that prevents auto-merge.
