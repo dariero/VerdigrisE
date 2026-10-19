@@ -31,7 +31,7 @@ description: "Publish a completed VerdigrisE change by validating the atomic dif
 
 10. Wait for Codex review and every repository check to complete. Resolve every actionable finding. Any push changes the pull-request head and invalidates all earlier Codex review coverage: rerun the free suite, post the canonical review request again, and wait for a new completed review before proceeding. Do not enable automatic merge while an actionable finding, unresolved review thread, or failing check remains.
 
-    A Codex error is a reply that reports a failure instead of a review, or no completed review within 15 minutes of the request. A review with findings is not an error. It always goes through the resolve-and-rereview path above. After the first Codex error, post the canonical review request once more. After a second error in a row on the same pull-request head, with every repository check on that head a completed success, add both failures to the pull-request body with `gh pr edit <N> --body-file <file>`, giving the comment id and time of each (for a request that got no completed review within 15 minutes, the request's comment id and time). Then skip step 11 and use the failure-path block in step 12.
+    A Codex error is a reply that reports a failure instead of a review, or no completed review within 15 minutes of the request. A review with findings is not an error. It always goes through the resolve-and-rereview path above. After the first Codex error, post the canonical review request once more. After a second error in a row on the same pull-request head, with every repository check on that head a completed success, add both failures to the pull-request body with `gh pr edit <N> --body-file <file>`, giving the comment id and time of each (for a request that got no completed review within 15 minutes, the request's comment id and time) and the head SHA both errors belong to. Read that SHA with `gh pr view <N> --json headRefOid` when each request is posted; it must be the same for both requests, and every repository check on it must be a completed success. Then skip step 11 and use the failure-path block in step 12 with that SHA.
 11. Prove that Codex reviewed the current pull-request head. Read the latest completed Codex review response, record the SHA shown in its `Reviewed commit` field, resolve that reference to a full commit SHA, and require exact equality with the current `headRefOid`:
 
     ```bash
@@ -57,12 +57,14 @@ description: "Publish a completed VerdigrisE change by validating the atomic dif
     gh pr merge --auto --squash --match-head-commit "$pr_head" "$PR_NUMBER"
     ```
 
-    On the step 10 failure path only, use this block instead. It still reads `pr_head` fresh and merges with `--match-head-commit "$pr_head"`; it drops only the three Codex lines of the block above (the reviewed-reference guard, its lookup, and the equality test):
+    On the step 10 failure path only, use this block instead. It drops the three Codex lines of the block above and pins the head in their place: the fresh `headRefOid` must equal the head SHA recorded in step 10 before `--match-head-commit "$pr_head"` merges it. A push after the second error changes the head, so this block stops, and the push restarts step 10 with a new review request:
 
     ```bash
     set -euo pipefail
     : "${PR_NUMBER:?set PR_NUMBER to the pull-request number}"
+    : "${FAILED_HEAD:?set FAILED_HEAD to the head SHA recorded in step 10}"
     pr_head=$(gh pr view "$PR_NUMBER" --json headRefOid --jq .headRefOid)
+    test "$pr_head" = "$FAILED_HEAD"
     gh pr merge --auto --squash --match-head-commit "$pr_head" "$PR_NUMBER"
     ```
 
