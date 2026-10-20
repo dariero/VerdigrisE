@@ -43,7 +43,7 @@ allocation is not charged to either operation. Medians are reported because a
 single scheduler preemption skews a mean and these runs are short.
 
 Vector width. The embedding dimension is not a constant in this repository: it
-is taken from the provider's response at runtime (`pipeline.py:714`,
+is taken from the provider's response at runtime (`pipeline.py:715`,
 `dimension=vectors.shape[1]`). The widths swept below are illustrative choices
 for measurement, not repository-derived facts, with one exception: 12 is the
 width of the hand-authored fixture vectors in `eval/test_verdigrise.py`.
