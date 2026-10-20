@@ -163,8 +163,6 @@ GOLDEN_CASES: list[GoldenCaseFixture] = [
         "required_qualifiers": ["distilled in copper", "administered after dusk"],
         "must_contain": [
             "3 drams",
-            "distilled in copper",
-            "administered after dusk",
             "GRIM-VERDANT",
             "[verdigris-dose-verdant]",
         ],
@@ -203,8 +201,6 @@ GOLDEN_CASES: list[GoldenCaseFixture] = [
         "required_qualifiers": ["distilled in amber glass", "administered at dawn"],
         "must_contain": [
             "9 drams",
-            "distilled in amber glass",
-            "administered at dawn",
             "GRIM-AMBER",
             "[verdigris-dose-amber]",
         ],
@@ -243,8 +239,6 @@ GOLDEN_CASES: list[GoldenCaseFixture] = [
         "required_qualifiers": ["distilled in basalt", "lunar eclipse"],
         "must_contain": [
             "15 drams",
-            "distilled in basalt",
-            "lunar eclipse",
             "GRIM-OBSIDIAN-PETAL",
             "[verdigris-dose-obsidian]",
         ],
@@ -307,7 +301,6 @@ GOLDEN_CASES: list[GoldenCaseFixture] = [
         "required_qualifiers": ["grown entirely in shade"],
         "must_contain": [
             "7 moon-phases",
-            "grown entirely in shade",
             "GRIM-UMBRAL-BOTANY",
             "[shadeglass-orchid-harvest]",
         ],
@@ -338,9 +331,7 @@ GOLDEN_CASES: list[GoldenCaseFixture] = [
         "expected_grimoire_id": "GRIM-UMBRAL-BOTANY",
         "required_qualifiers": ["direct sun exposure", "harvest window"],
         "must_contain": [
-            "direct sun exposure",
             "invalidates",
-            "harvest window",
             "GRIM-UMBRAL-BOTANY",
             "[shadeglass-orchid-harvest]",
         ],

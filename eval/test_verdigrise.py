@@ -824,7 +824,25 @@ def test_value_only_answer_cannot_pass_required_qualifiers(
     answer = records[case.case_id].answer
     assert case.expected_value in answer
     for qualifier in case.required_qualifiers:
-        assert qualifier in answer
+        assert qualifier.lower() in answer.lower()
+
+
+def test_required_qualifiers_are_pinned() -> None:
+    """`required_qualifiers` is the only list that names each answer qualifier.
+
+    The qualifiers left `must_contain` so that letter case can be ignored, so deleting
+    one here would otherwise drop it from every answer check without a failure.
+    """
+
+    assert {case.case_id: case.required_qualifiers for case in GOLDEN} == {
+        "numeric-source-verdigris-dose": ["distilled in copper", "administered after dusk"],
+        "numeric-source-amber-dose": ["distilled in amber glass", "administered at dawn"],
+        "numeric-source-obsidian-dose": ["distilled in basalt", "lunar eclipse"],
+        "near-synonym-moonpetal-vapor": [],
+        "conditional-shadeglass-harvest": ["grown entirely in shade"],
+        "conditional-shadeglass-direct-sun": ["direct sun exposure", "harvest window"],
+        "absent-moonpetal-dew-shelf-life": [],
+    }
 
 
 def test_abstention_token_is_exact() -> None:
@@ -3471,7 +3489,7 @@ def _assert_live_golden_contract(case: GoldenCase, record: RagRecord) -> None:
     assert case.expected_value is not None
     assert case.expected_value in record.answer
     for qualifier in case.required_qualifiers:
-        assert qualifier in record.answer
+        assert qualifier.lower() in record.answer.lower()
     for literal in case.must_contain:
         assert literal in record.answer
     for literal in case.forbidden:
@@ -3527,6 +3545,35 @@ def test_paid_pipeline_fan_out_matches_selected_cases(
     assert [call[2] for call in embedder.calls[1:]] == ["query" for _ in selected_questions]
     assert [question for question, _ in generator.calls] == selected_questions
     assert len(embedder.calls) + len(generator.calls) == 1 + 2 * len(selected_cases)
+
+
+def test_live_contract_accepts_qualifier_case_and_rejects_a_missing_qualifier(
+    tmp_path: Path,
+) -> None:
+    """The 2026-10-13 live answer began "Direct sun exposure" and failed on the capital D.
+
+    Letter case of a required qualifier must not fail the live contract, and an answer
+    that drops the qualifier must still fail it.
+    """
+
+    case = GOLDEN_BY_ID["conditional-shadeglass-direct-sun"]
+    capitalised = case.expected_answer.replace("direct sun exposure", "Direct sun exposure")
+    missing = case.expected_answer.replace("direct sun exposure ", "")
+    assert capitalised != case.expected_answer
+    assert missing != case.expected_answer
+    generator = FixedAnswerGenerator()
+    pipeline = _build_ingested_pipeline(
+        embedder=FixedEmbeddingProvider(),
+        generator=generator,
+        output_directory=tmp_path,
+    )
+
+    generator.answers[case.question] = capitalised
+    _assert_live_golden_contract(case, pipeline.ask(case.question))
+
+    generator.answers[case.question] = missing
+    with pytest.raises(AssertionError):
+        _assert_live_golden_contract(case, pipeline.ask(case.question))
 
 
 @pytest.mark.openai
