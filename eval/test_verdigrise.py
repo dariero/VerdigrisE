@@ -98,6 +98,7 @@ DOSAGE_CASES = [case for case in GOLDEN if case.case_id.startswith("numeric-sour
 
 _EXPECTED_SYSTEM_INSTRUCTIONS = """Answer only from the supplied CONTEXT blocks.
 Do not use outside knowledge or infer an unstated value.
+State the conditions that the cited context ties to your answer's value, in the context's words.
 For every supported statement, cite the supporting stable chunk id in square
 brackets, for example [verdigris-dose-verdant].
 Context labels provide `grimoire_id` and `folio`. Repeat the supporting
