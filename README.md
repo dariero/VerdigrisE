@@ -154,7 +154,7 @@ VerdigrisE splits evaluation between two owners — exact concerns belong to det
 |---|---|---|
 | Expected ids and rank order | Deterministic pytest | Fixed-vector retrieval records |
 | Collision sibling present in top-2 context | Deterministic pytest | Stable ids, verbatim sibling text, and forbidden literals |
-| Exact numbers, units, and qualifiers | Deterministic pytest | Golden `required_qualifiers` (letter case ignored), `must_contain` and `forbidden` fields |
+| Exact numbers, units, and qualifiers | Deterministic pytest | Golden `must_contain` (exact), `required_qualifiers` and `forbidden` (letter case ignored) fields |
 | Exact abstention phrase | Deterministic pytest | Byte-for-byte `INSUFFICIENT_CONTEXT` equality |
 | Verbatim context membership and order | Deterministic pytest | Captured `context_payload` |
 | Citation metadata and answer citations | Deterministic pytest | Raw entry, `RetrievedChunk`, context label, and answer |

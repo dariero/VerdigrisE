@@ -803,7 +803,7 @@ def test_required_and_forbidden_facts(case: GoldenCase, records: dict[str, RagRe
     for literal in case.must_contain:
         assert literal in record.answer
     for literal in case.forbidden:
-        assert literal not in record.answer
+        assert literal.lower() not in record.answer.lower()
 
 
 @pytest.mark.parametrize("case", ANSWERABLE, ids=lambda case: case.case_id)
@@ -814,7 +814,7 @@ def test_expected_value_and_conflicting_values_are_owned_deterministically(
     assert case.expected_value is not None
     assert case.expected_value in answer
     for value in case.forbidden_values:
-        assert value not in answer
+        assert value.lower() not in answer.lower()
 
 
 @pytest.mark.parametrize("case", QUALIFIED_CASES, ids=lambda case: case.case_id)
@@ -830,8 +830,8 @@ def test_value_only_answer_cannot_pass_required_qualifiers(
 def test_required_qualifiers_are_pinned() -> None:
     """`required_qualifiers` is the only list that names each answer qualifier.
 
-    The qualifiers left `must_contain` so that letter case can be ignored, so deleting
-    one here would otherwise drop it from every answer check without a failure.
+    The qualifiers left `must_contain` so that letter case can be ignored. Deleting one
+    here would otherwise drop it from every answer check without a failure.
     """
 
     assert {case.case_id: case.required_qualifiers for case in GOLDEN} == {
@@ -842,6 +842,106 @@ def test_required_qualifiers_are_pinned() -> None:
         "conditional-shadeglass-harvest": ["grown entirely in shade"],
         "conditional-shadeglass-direct-sun": ["direct sun exposure", "harvest window"],
         "absent-moonpetal-dew-shelf-life": [],
+    }
+
+
+def test_must_contain_is_pinned() -> None:
+    """The free answers are each case's own `expected_answer`.
+
+    Deleting a literal from `must_contain` would otherwise fail no free test.
+    """
+
+    assert {case.case_id: case.must_contain for case in GOLDEN} == {
+        "numeric-source-verdigris-dose": ["3 drams", "GRIM-VERDANT", "[verdigris-dose-verdant]"],
+        "numeric-source-amber-dose": ["9 drams", "GRIM-AMBER", "[verdigris-dose-amber]"],
+        "numeric-source-obsidian-dose": [
+            "15 drams",
+            "GRIM-OBSIDIAN-PETAL",
+            "[verdigris-dose-obsidian]",
+        ],
+        "near-synonym-moonpetal-vapor": [
+            "silver sleep vapor",
+            "11 grains",
+            "GRIM-NOCTURNE",
+            "[moonpetal-silver-vapor]",
+        ],
+        "conditional-shadeglass-harvest": [
+            "7 moon-phases",
+            "GRIM-UMBRAL-BOTANY",
+            "[shadeglass-orchid-harvest]",
+        ],
+        "conditional-shadeglass-direct-sun": [
+            "invalidates",
+            "GRIM-UMBRAL-BOTANY",
+            "[shadeglass-orchid-harvest]",
+        ],
+        "absent-moonpetal-dew-shelf-life": [],
+    }
+
+
+def test_forbidden_is_pinned() -> None:
+    """The free answers are each case's own `expected_answer`.
+
+    Outside the dosage literals and each sibling's conflict value, deleting a literal from
+    `forbidden` would otherwise fail no free test.
+    """
+
+    assert {case.case_id: case.forbidden for case in GOLDEN} == {
+        "numeric-source-verdigris-dose": [
+            "9 drams",
+            "GRIM-AMBER",
+            "distilled in amber glass",
+            "administered at dawn",
+            "[verdigris-dose-amber]",
+            "15 drams",
+            "GRIM-OBSIDIAN-PETAL",
+            "distilled in basalt",
+            "lunar eclipse",
+            "[verdigris-dose-obsidian]",
+        ],
+        "numeric-source-amber-dose": [
+            "15 drams",
+            "GRIM-OBSIDIAN-PETAL",
+            "distilled in basalt",
+            "lunar eclipse",
+            "[verdigris-dose-obsidian]",
+            "3 drams",
+            "GRIM-VERDANT",
+            "distilled in copper",
+            "administered after dusk",
+            "[verdigris-dose-verdant]",
+        ],
+        "numeric-source-obsidian-dose": [
+            "3 drams",
+            "GRIM-VERDANT",
+            "distilled in copper",
+            "administered after dusk",
+            "[verdigris-dose-verdant]",
+            "9 drams",
+            "GRIM-AMBER",
+            "distilled in amber glass",
+            "administered at dawn",
+            "[verdigris-dose-amber]",
+        ],
+        "near-synonym-moonpetal-vapor": [
+            "golden waking vapor",
+            "17 grains",
+            "GRIM-DAWN-PETAL",
+            "[moonflower-golden-vapor]",
+        ],
+        "conditional-shadeglass-harvest": [
+            "10 moon-phases",
+            "full sun",
+            "GRIM-SOLAR-FLORA",
+            "[sunspire-orchid-harvest]",
+        ],
+        "conditional-shadeglass-direct-sun": [
+            "10 moon-phases",
+            "full sun",
+            "GRIM-SOLAR-FLORA",
+            "[sunspire-orchid-harvest]",
+        ],
+        "absent-moonpetal-dew-shelf-life": ["grains", "drams", "moon-phases", "Mohs hardness"],
     }
 
 
@@ -3493,7 +3593,7 @@ def _assert_live_golden_contract(case: GoldenCase, record: RagRecord) -> None:
     for literal in case.must_contain:
         assert literal in record.answer
     for literal in case.forbidden:
-        assert literal not in record.answer
+        assert literal.lower() not in record.answer.lower()
 
     expected = next(
         chunk for chunk in record.retrieved_chunks if chunk.id == case.expected_retrieved_id
@@ -3573,6 +3673,30 @@ def test_live_contract_accepts_qualifier_case_and_rejects_a_missing_qualifier(
 
     generator.answers[case.question] = missing
     with pytest.raises(AssertionError):
+        _assert_live_golden_contract(case, pipeline.ask(case.question))
+
+
+def test_live_contract_rejects_a_forbidden_literal_in_any_letter_case(tmp_path: Path) -> None:
+    """A live answer can open a sentence with "Distilled in amber glass", a sibling's qualifier.
+
+    The verdigris case forbids that literal, so the forbidden check must ignore letter case.
+    """
+
+    case = GOLDEN_BY_ID["numeric-source-verdigris-dose"]
+    capitalised = case.expected_answer + " Distilled in amber glass."
+    assert capitalised != case.expected_answer
+    assert "distilled in amber glass" not in capitalised
+    generator = FixedAnswerGenerator()
+    pipeline = _build_ingested_pipeline(
+        embedder=FixedEmbeddingProvider(),
+        generator=generator,
+        output_directory=tmp_path,
+    )
+
+    _assert_live_golden_contract(case, pipeline.ask(case.question))
+
+    generator.answers[case.question] = capitalised
+    with pytest.raises(AssertionError, match="distilled in amber glass"):
         _assert_live_golden_contract(case, pipeline.ask(case.question))
 
 
