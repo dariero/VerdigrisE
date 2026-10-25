@@ -1,0 +1,20 @@
+# GitHub Actions updates only, grouped into one pull request a week so that each
+# update arrives as one diff that gets read. The pip ecosystem is not enabled:
+# CI installs from the hash-locked pylock.toml, and the lock moves only through
+# the upgrade-dependencies skill.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "16:00"
+      timezone: "Australia/Melbourne"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore"
+    groups:
+      actions:
+        patterns:
+          - "*"
