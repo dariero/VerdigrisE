@@ -2,6 +2,9 @@
 # update arrives as one diff that gets read. The pip ecosystem is not enabled:
 # CI installs from the hash-locked pylock.toml, and the lock moves only through
 # the upgrade-dependencies skill.
+# Dependabot security updates are off in the repository settings: a uv security
+# PR changes uv.lock without pylock.toml, which CI rejects. Alerts stay on, and
+# a uv alert is fixed through the upgrade-dependencies skill.
 version: 2
 updates:
   - package-ecosystem: "github-actions"

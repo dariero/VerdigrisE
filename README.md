@@ -398,7 +398,7 @@ GitHub Actions validates every ready pull request against its prospective merge 
 
 GitHub natively ingests the committed `uv.lock` into the dependency graph, preserving exact versions and dependency relationships for Dependabot monitoring. CI independently requires `uv.lock` to satisfy `pyproject.toml` and requires its frozen export to match the committed `pylock.toml` byte for byte. The hash-bearing `pylock.toml` remains the public-install contract; it is not submitted as a second dependency inventory, so the graph has one full-fidelity lock authority and no repository workflow needs write permission for dependency submission.
 
-Dependabot opens one grouped pull request a week for GitHub Actions updates, and Python packages move only through the upgrade-dependencies skill (`.agents/skills/upgrade-dependencies/SKILL.md`).
+Dependabot opens one grouped pull request a week for GitHub Actions updates, and Python packages move only through the upgrade-dependencies skill (`.agents/skills/upgrade-dependencies/SKILL.md`). Dependabot security updates are off, so an alert opens no pull request; a uv alert is fixed through the same skill.
 
 Install the Git hook once per clone:
 
