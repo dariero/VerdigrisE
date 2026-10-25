@@ -76,7 +76,7 @@ uv pip sync --preview-features pylock --require-hashes pylock.toml
 uv pip check
 ```
 
-`pyproject.toml` is the abstract dependency authority: NumPy, OpenAI, and Pydantic are runtime dependencies; pytest, pytest-cov, and RagaliQ are test/evaluation dependencies; mypy, pre-commit, pre-commit-hooks, and Ruff are development tooling. The committed `uv.lock` preserves uv's solver decisions and dependency graph. The universal, hash-bearing `pylock.toml` is exported from that solver state and remains the exact cross-platform public-install contract. The current locks are validated and reproduced with uv 0.13.0 for Python 3.14, and install the public `ragaliq==0.2.0` release rather than relying on an adjacent checkout.
+`pyproject.toml` is the abstract dependency authority: NumPy, OpenAI, and Pydantic are runtime dependencies; pytest, pytest-cov, and RagaliQ are test/evaluation dependencies; mypy, pre-commit, pre-commit-hooks, and Ruff are development tooling. The committed `uv.lock` preserves uv's solver decisions and dependency graph. The universal, hash-bearing `pylock.toml` is exported from that solver state and remains the exact cross-platform public-install contract. The current locks are validated and reproduced with uv 0.13.5 for Python 3.14, and install the public `ragaliq==0.2.0` release rather than relying on an adjacent checkout. `pyproject.toml` also holds anthropic below 2 with a uv constraint while ragaliq is 0.2.0, because ragaliq 0.2.0 sends a temperature that anthropic 2.x rejects.
 
 > **Platform support:** The command examples use POSIX shell syntax and paths. The free validation path is exercised locally on macOS and continuously on Ubuntu through GitHub Actions; native Windows command syntax and execution are not currently tested or claimed.
 
@@ -341,6 +341,7 @@ RagaliQ's native pytest plugin supplies `rag_tester`, `ClaudeJudge`, retrying tr
 ├── .claude/                     # skills links to ../.agents/skills for Claude Code
 ├── .github/
 │   ├── CODEOWNERS               # Review routing for policy and contract surfaces
+│   ├── dependabot.yml           # Weekly grouped GitHub Actions updates
 │   └── workflows/
 │       └── ci.yml               # Locked, secret-free pull-request validation
 ├── .pre-commit-config.yaml      # Ruff and repository-hygiene commit hooks
@@ -396,6 +397,8 @@ Ruff is the repository's formatter and linter. Mypy strictly checks the applicat
 GitHub Actions validates every ready pull request against its prospective merge result and validates `main` after each merge. CI installs the hash-locked Python 3.14 environment from a clean checkout, validates the pre-commit configuration, runs every repository hook, and runs the deterministic branch-coverage gate with OpenAI and RagaliQ paid markers explicitly excluded. Provider key variables are explicitly empty throughout the job, and the workflow does not reference provider secrets.
 
 GitHub natively ingests the committed `uv.lock` into the dependency graph, preserving exact versions and dependency relationships for Dependabot monitoring. CI independently requires `uv.lock` to satisfy `pyproject.toml` and requires its frozen export to match the committed `pylock.toml` byte for byte. The hash-bearing `pylock.toml` remains the public-install contract; it is not submitted as a second dependency inventory, so the graph has one full-fidelity lock authority and no repository workflow needs write permission for dependency submission.
+
+Dependabot opens one grouped pull request a week for GitHub Actions updates, and Python packages move only through the upgrade-dependencies skill (`.agents/skills/upgrade-dependencies/SKILL.md`).
 
 Install the Git hook once per clone:
 
@@ -453,10 +456,10 @@ Run the same free suite with deterministic branch coverage over `config.py`, `co
 When dependency metadata changes, update the committed solver state and regenerate its standardized public-install export with the same Python policy:
 
 ```bash
-uvx --from uv==0.13.0 uv lock \
+uvx --from uv==0.13.5 uv lock \
   --python 3.14 \
   --prerelease disallow
-uvx --from uv==0.13.0 uv export \
+uvx --from uv==0.13.5 uv export \
   --frozen \
   --format pylock.toml \
   --all-groups \

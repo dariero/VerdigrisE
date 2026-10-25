@@ -3408,6 +3408,35 @@ def test_default_marker_policy_excludes_both_paid_tiers() -> None:
     ], "Both paid markers must stay registered for the default exclusion to select anything."
 
 
+def test_locked_anthropic_stays_below_2_while_ragaliq_is_0_2() -> None:
+    """ragaliq 0.2.0 sends a temperature on every judge call, and anthropic 2.x rejects it.
+
+    The free tier cannot see this defect, because the canned judge transport replaces
+    the Claude transport and never calls the SDK. Only a paid semantic run would fail,
+    so the lock and the uv constraint that hold anthropic below 2 are pinned here.
+    """
+
+    root = eval_conftest.PROJECT_ROOT
+    pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    pylock = tomllib.loads((root / "pylock.toml").read_text(encoding="utf-8"))
+    locked = {package["name"]: package["version"] for package in pylock["packages"]}
+
+    assert locked.get("ragaliq") == "0.2.0", (
+        f"The lock resolves ragaliq {locked.get('ragaliq')}, not 0.2.0. Remove this test and "
+        "the anthropic<2 constraint in pyproject.toml with the ragaliq 0.3.0 bump (Block 4)."
+    )
+    assert locked.get("anthropic", "").split(".")[0] == "1", (
+        f"The lock resolves anthropic {locked.get('anthropic')}. ragaliq 0.2.0 sends a "
+        "temperature on every judge call, anthropic 2.x rejects it, and every paid semantic "
+        "judge call would fail."
+    )
+    constraints = pyproject.get("tool", {}).get("uv", {}).get("constraint-dependencies", [])
+    assert "anthropic<2" in constraints, (
+        "pyproject.toml [tool.uv] constraint-dependencies no longer holds anthropic<2, so the "
+        "next uv lock can resolve anthropic 2.x under ragaliq 0.2.0."
+    )
+
+
 def _tracked_paths() -> list[str]:
     completed = subprocess.run(
         ["git", "ls-files"],
