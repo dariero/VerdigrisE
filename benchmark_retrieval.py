@@ -10,17 +10,18 @@ reproduce the tables in the README's Production Boundary section.
 
 What it measures, and why those two operations.
 
-`NumpyVectorIndex.search` (`pipeline.py:411-437`) does its work in two steps
+`pipeline.py::NumpyVectorIndex.search` does its work in two steps
 that scale differently:
 
-- `pipeline.py:422` computes `self._vectors @ normalized_query`, one BLAS-backed
-  matrix-vector product over a contiguous float32 array of shape (n, d). The
-  arithmetic is proportional to n * d and runs entirely in compiled code.
-- `pipeline.py:423-426` calls `sorted(range(n), key=...)`. The key is
-  interpreted Python, invoked once per row, and each invocation extracts a NumPy
-  scalar, indexes a list, reads a dict, negates, and allocates a tuple. Then the
-  sort performs O(n log n) tuple comparisons. It orders all n rows to return
-  TOP_K, which is 2 (`config.py:13`).
+- `pipeline.py::NumpyVectorIndex.search` computes
+  `self._vectors @ normalized_query`, one BLAS-backed matrix-vector product over
+  a contiguous float32 array of shape (n, d). The arithmetic is proportional to
+  n * d and runs entirely in compiled code.
+- `pipeline.py::NumpyVectorIndex.search` calls `sorted(range(n), key=...)`. The
+  key is interpreted Python, invoked once per row, and each invocation extracts
+  a NumPy scalar, indexes a list, reads a dict, negates, and allocates a tuple.
+  Then the sort performs O(n log n) tuple comparisons. It orders all n rows to
+  return TOP_K, which is 2 (`config.py::TOP_K`).
 
 Three regimes, not one crossover.
 
@@ -43,7 +44,7 @@ allocation is not charged to either operation. Medians are reported because a
 single scheduler preemption skews a mean and these runs are short.
 
 Vector width. The embedding dimension is not a constant in this repository: it
-is taken from the provider's response at runtime (`pipeline.py:715`,
+is taken from the provider's response at runtime (`pipeline.py::ingest_corpus`,
 `dimension=vectors.shape[1]`). The widths swept below are illustrative choices
 for measurement, not repository-derived facts, with one exception: 12 is the
 width of the hand-authored fixture vectors in `eval/test_verdigrise.py`.
@@ -54,13 +55,13 @@ n = 100,000 row published in the README is opt-in because it peaks around 5 GiB:
     .venv/bin/python benchmark_retrieval.py --rows 1000 10000 100000
 
 That peak is not this script's to avoid. It belongs to `NumpyVectorIndex.index`,
-which calls `_normalize` (`pipeline.py:384-396`), and that holds the float32
-input, a float64 copy, a float64 quotient, and the float32 result at once, then
-revalidates through another float64 pass in `_unit_rows`. Peak ingest memory is
-therefore several times the resident matrix, which is a real and deliberate cost
-of the float64 accumulator that keeps float32 extremes from collapsing, not an
-artefact of measurement. This script generates its own rows as float32 and
-normalizes them in blocks so it adds nothing avoidable on top.
+which calls `pipeline.py::NumpyVectorIndex._normalize`, and that holds the
+float32 input, a float64 copy, a float64 quotient, and the float32 result at
+once, then revalidates through another float64 pass in `_unit_rows`. Peak ingest
+memory is therefore several times the resident matrix, which is a real and
+deliberate cost of the float64 accumulator that keeps float32 extremes from
+collapsing, not an artefact of measurement. This script generates its own rows
+as float32 and normalizes them in blocks so it adds nothing avoidable on top.
 
 Timings are machine-specific and vary between runs on one machine. Measured over
 five trials at 21 repetitions, spread stayed under 13 percent at every grid point
@@ -105,7 +106,8 @@ def _synthetic_entries(count: int) -> list[dict[str, object]]:
     """Build corpus entries that satisfy index validation without any real text.
 
     Ids are zero-padded so they sort lexicographically, which keeps the
-    tie-break comparison at `pipeline.py:425` doing representative string work.
+    tie-break comparison in `pipeline.py::NumpyVectorIndex.search` doing
+    representative string work.
     """
 
     return [
@@ -129,7 +131,8 @@ def _unit_rows(rows: int, width: int, generator: np.random.Generator) -> np.ndar
     implementation, drawing float64 and converting, holds three full-size arrays
     at once; at the largest default grid point that is over 2 GiB of avoidable
     temporaries on top of the matrix itself. The float64 accumulator is still
-    used for the norm, matching `pipeline.py:384-396`, but only one block wide.
+    used for the norm, matching `pipeline.py::NumpyVectorIndex._normalize`, but
+    only one block wide.
     """
 
     matrix = generator.standard_normal((rows, width), dtype=np.float32)

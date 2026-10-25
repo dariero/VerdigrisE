@@ -8,9 +8,11 @@ Ownership boundary:
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import pickle
+import re
 import subprocess
 import tomllib
 from collections import OrderedDict, UserDict
@@ -3458,6 +3460,62 @@ def test_every_tracked_top_level_path_is_documented() -> None:
 
     undocumented = sorted(path for path in top_level if path not in readme)
     assert undocumented == [], f"README does not mention tracked paths: {undocumented}"
+
+
+def test_docs_cite_code_by_name_not_line_number() -> None:
+    """A line-number citation drifts with every edit above it and still looks right.
+
+    A citation by name fails here instead, so the scanned documents cite code as
+    `<path>::<Name>` or `<path>::<Class>.<member>`, and each name must exist.
+    """
+
+    def defined_names(body: list[ast.stmt]) -> set[str]:
+        names: set[str] = set()
+        for node in body:
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+                names.add(node.name)
+            elif isinstance(node, ast.Assign):
+                names.update(target.id for target in node.targets if isinstance(target, ast.Name))
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                names.add(node.target.id)
+            elif isinstance(node, ast.TypeAlias):
+                names.add(node.name.id)
+        return names
+
+    tracked = _tracked_paths()
+    skills = [path for path in tracked if re.fullmatch(r"\.agents/skills/[^/]+/SKILL\.md", path)]
+    line_reference = re.compile(r"[\w./-]+\.(?:py|md|toml|yml|yaml):\d+")
+    named_reference = re.compile(r"([\w./-]+\.py)::(\w+)(?:\.(\w+))?")
+
+    offending: list[str] = []
+    for document in ["README.md", "benchmark_retrieval.py", "AGENTS.md", *skills]:
+        text = (eval_conftest.PROJECT_ROOT / document).read_text(encoding="utf-8")
+        offending.extend(f"{document}: {match}" for match in line_reference.findall(text))
+        for span in re.findall(r"`([^`\n]+)`", text):
+            if re.fullmatch(r":\d+(?:-\d+)?", span):
+                offending.append(f"{document}: `{span}`")
+                continue
+            reference = named_reference.fullmatch(span)
+            if reference is None:
+                continue
+            module, name, member = reference.groups()
+            if module not in tracked:
+                offending.append(f"{document}: `{span}` names an untracked file")
+                continue
+            body = ast.parse((eval_conftest.PROJECT_ROOT / module).read_text(encoding="utf-8")).body
+            if member is None:
+                resolved = name in defined_names(body)
+            else:
+                resolved = any(
+                    isinstance(node, ast.ClassDef)
+                    and node.name == name
+                    and member in defined_names(node.body)
+                    for node in body
+                )
+            if not resolved:
+                offending.append(f"{document}: `{span}` names no definition in {module}")
+
+    assert offending == [], f"Docs cite code by line number or by a missing name: {offending}"
 
 
 def test_agent_policy_names_only_defined_symbols() -> None:

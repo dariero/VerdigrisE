@@ -2,9 +2,9 @@
 /.github/ @dariero
 /AGENTS.md @dariero
 /.agents/skills/ @dariero
+/.claude/ @dariero
 /LICENSE @dariero
 /SECURITY.md @dariero
-/.env.example @dariero
 /.gitignore @dariero
 /.pre-commit-config.yaml @dariero
 /.python-version @dariero
