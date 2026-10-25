@@ -54,14 +54,16 @@ n = 100,000 row published in the README is opt-in because it peaks around 5 GiB:
 
     .venv/bin/python benchmark_retrieval.py --rows 1000 10000 100000
 
-That peak is not this script's to avoid. It belongs to `NumpyVectorIndex.index`,
-which calls `pipeline.py::NumpyVectorIndex._normalize`, and that holds the
-float32 input, a float64 copy, a float64 quotient, and the float32 result at
-once, then revalidates through another float64 pass in `_unit_rows`. Peak ingest
-memory is therefore several times the resident matrix, which is a real and
-deliberate cost of the float64 accumulator that keeps float32 extremes from
-collapsing, not an artefact of measurement. This script generates its own rows
-as float32 and normalizes them in blocks so it adds nothing avoidable on top.
+That peak is not this script's to avoid. It belongs to
+`pipeline.py::NumpyVectorIndex.index`, which calls
+`pipeline.py::NumpyVectorIndex._normalize`, and that holds the float32 input, a
+float64 copy, a float64 quotient, and the float32 result at once, then
+revalidates through another float64 pass in
+`pipeline.py::NumpyVectorIndex._validate_unit_rows`. Peak ingest memory is
+therefore several times the resident matrix, which is a real and deliberate cost
+of the float64 accumulator that keeps float32 extremes from collapsing, not an
+artefact of measurement. This script generates its own rows as float32 and
+normalizes them in blocks so it adds nothing avoidable on top.
 
 Timings are machine-specific and vary between runs on one machine. Measured over
 five trials at 21 repetitions, spread stayed under 13 percent at every grid point
