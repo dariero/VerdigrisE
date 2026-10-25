@@ -1,6 +1,6 @@
 ---
 name: ship
-description: "Publish a completed VerdigrisE change by validating the atomic diff, committing it, pushing a task branch, opening a ready pull request, requesting Codex review, enabling automatic squash merge, and proving the exact merge revision's post-merge checks. Use when the user asks to ship, publish, or open and merge a pull request."
+description: "Publish a completed VerdigrisE change by validating the atomic diff, committing it, pushing a task branch, opening a ready pull request, requesting Codex review, squash merging the reviewed head directly, and proving the exact merge revision's post-merge checks. Use when the user asks to ship, publish, or open and merge a pull request."
 ---
 
 # Ship a change
@@ -29,7 +29,7 @@ description: "Publish a completed VerdigrisE change by validating the atomic dif
    @codex review for deterministic/RagaliQ ownership, dependency reproducibility, Python 3.14 compatibility, public-clone portability, paid-call safety, golden-fixture integrity, marker correctness, public API compatibility, and unintended behaviour changes
    ```
 
-10. Wait for Codex review and every repository check to complete. Resolve every actionable finding. Any push changes the pull-request head and invalidates all earlier Codex review coverage: rerun the free suite, post the canonical review request again, and wait for a new completed review before proceeding. Do not enable automatic merge while an actionable finding, unresolved review thread, or failing check remains.
+10. Wait for Codex review and every repository check to complete. Resolve every actionable finding. Any push changes the pull-request head and invalidates all earlier Codex review coverage: rerun the free suite, post the canonical review request again, and wait for a new completed review before proceeding. Do not merge while an actionable finding, unresolved review thread, or failing check remains.
 
     A Codex error is a reply that reports a failure instead of a review, or no completed review within 15 minutes of the request. A review with findings is not an error. It always goes through the resolve-and-rereview path above. After the first Codex error, post the canonical review request once more. After a second error in a row on the same pull-request head, with every repository check on that head a completed success, add both failures to the pull-request body with `gh pr edit <N> --body-file <file>`, giving the comment id and time of each (for a request that got no completed review within 15 minutes, the request's comment id and time) and the head SHA both errors belong to. Read that SHA with `gh pr view <N> --json headRefOid` when each request is posted; it must be the same for both requests, and every repository check on it must be a completed success. Then skip step 11 and use the failure-path block in step 12 with that SHA.
 11. Prove that Codex reviewed the current pull-request head. Read the latest completed Codex review response, record the SHA shown in its `Reviewed commit` field, resolve that reference to a full commit SHA, and require exact equality with the current `headRefOid`:
@@ -42,10 +42,10 @@ description: "Publish a completed VerdigrisE change by validating the atomic dif
     test "$codex_reviewed_head" = "$pr_head"
     ```
 
-    Do not infer exact-head coverage from a review timestamp, reaction, or review of an earlier commit. If the latest completed Codex response does not identify a reviewed commit, request a manual exact-head review and wait. Repeat this equality gate immediately before enabling automatic merge so a concurrent push cannot make the review stale.
+    Do not infer exact-head coverage from a review timestamp, reaction, or review of an earlier commit. If the latest completed Codex response does not identify a reviewed commit, request a manual exact-head review and wait. Repeat this equality gate immediately before merging so a concurrent push cannot make the review stale.
 
     Skip this step only on the step 10 failure path.
-12. Verify that the ready pull request targets `main`, is mergeable, and contains only the intended atomic change. Enable automatic merge using the squash method:
+12. Verify that the ready pull request targets `main`, is mergeable, and contains only the intended atomic change. This block squash merges the reviewed head directly:
 
     ```bash
     set -euo pipefail
@@ -54,10 +54,10 @@ description: "Publish a completed VerdigrisE change by validating the atomic dif
     pr_head=$(gh pr view "$PR_NUMBER" --json headRefOid --jq .headRefOid)
     codex_reviewed_head=$(gh api "repos/{owner}/{repo}/commits/$CODEX_REVIEWED_REF" --jq .sha)
     test "$codex_reviewed_head" = "$pr_head"
-    gh pr merge --auto --squash --match-head-commit "$pr_head" "$PR_NUMBER"
+    gh pr merge --squash --match-head-commit "$pr_head" "$PR_NUMBER"
     ```
 
-    On the step 10 failure path only, use this block instead. It drops the three Codex lines of the block above and pins the head in their place: the fresh `headRefOid` must equal the head SHA recorded in step 10, and `--match-head-commit` binds the merge to that SHA. It merges directly, not with `--auto`, so the head is checked at the moment of merge and no pending auto-merge is left behind. If GitHub refuses because a requirement is not met yet, wait for it and run the block again; never add `--auto` or `--admin` on this path. A push after the second error changes the head, so this block stops, and the push restarts step 10 with a new review request:
+    On the step 10 failure path only, use this block instead. It drops the three Codex lines of the block above and pins the head in their place: the fresh `headRefOid` must equal the head SHA recorded in step 10, and `--match-head-commit` binds the merge to that SHA. Like the block above, it merges directly, not with `--auto`, so the head is checked at the moment of merge and no pending auto-merge is left behind. If GitHub refuses because a requirement is not met yet, wait for it and run the block again; never add `--auto` or `--admin` on this path. A push after the second error changes the head, so this block stops, and the push restarts step 10 with a new review request:
 
     ```bash
     set -euo pipefail
@@ -68,7 +68,7 @@ description: "Publish a completed VerdigrisE change by validating the atomic dif
     gh pr merge --squash --match-head-commit "$FAILED_HEAD" "$PR_NUMBER"
     ```
 
-    Report any branch-protection, review, or check requirement that prevents auto-merge.
+    Report any branch-protection, review, or check requirement that prevents the merge.
 13. Wait until GitHub reports the pull request as `MERGED`, resolve its exact squash-merge revision, and require both the published GitHub `main` ref and `origin/main` to equal that revision:
 
     ```bash
