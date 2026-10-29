@@ -31,10 +31,6 @@ test = [
 
 [tool.uv]
 package = false
-# ragaliq 0.2.0 sends a temperature on every judge call. anthropic 2.x sends API
-# version 2026-10-21, which rejects it, so this holds anthropic below 2 until the
-# ragaliq 0.3.0 bump removes it.
-constraint-dependencies = ["anthropic<2"]
 
 [tool.pytest]
 minversion = "9.1"
