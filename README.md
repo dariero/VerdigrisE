@@ -76,7 +76,7 @@ uv pip sync --preview-features pylock --require-hashes pylock.toml
 uv pip check
 ```
 
-`pyproject.toml` is the abstract dependency authority: NumPy, OpenAI, and Pydantic are runtime dependencies; pytest, pytest-cov, and RagaliQ are test/evaluation dependencies; mypy, pre-commit, pre-commit-hooks, and Ruff are development tooling. The committed `uv.lock` preserves uv's solver decisions and dependency graph. The universal, hash-bearing `pylock.toml` is exported from that solver state and remains the exact cross-platform public-install contract. The current locks are validated and reproduced with uv 0.13.5 for Python 3.14, and install the public `ragaliq==0.2.0` release rather than relying on an adjacent checkout. `pyproject.toml` also holds anthropic below 2 with a uv constraint while ragaliq is 0.2.0, because ragaliq 0.2.0 sends a temperature that anthropic 2.x rejects.
+`pyproject.toml` is the abstract dependency authority: NumPy, OpenAI, and Pydantic are runtime dependencies; pytest, pytest-cov, and RagaliQ are test/evaluation dependencies; mypy, pre-commit, pre-commit-hooks, and Ruff are development tooling. The committed `uv.lock` preserves uv's solver decisions and dependency graph. The universal, hash-bearing `pylock.toml` is exported from that solver state and remains the exact cross-platform public-install contract. The current locks are validated and reproduced with uv 0.13.6 for Python 3.14, and install the public `ragaliq==0.2.0` release rather than relying on an adjacent checkout.
 
 > **Platform support:** The command examples use POSIX shell syntax and paths. The free validation path is exercised locally on macOS and continuously on Ubuntu through GitHub Actions; native Windows command syntax and execution are not currently tested or claimed.
 
@@ -456,10 +456,10 @@ Run the same free suite with deterministic branch coverage over `config.py`, `co
 When dependency metadata changes, update the committed solver state and regenerate its standardized public-install export with the same Python policy:
 
 ```bash
-uvx --from uv==0.13.5 uv lock \
+uvx --from uv==0.13.6 uv lock \
   --python 3.14 \
   --prerelease disallow
-uvx --from uv==0.13.5 uv export \
+uvx --from uv==0.13.6 uv export \
   --frozen \
   --format pylock.toml \
   --all-groups \
