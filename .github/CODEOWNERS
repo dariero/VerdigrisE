@@ -11,6 +11,8 @@
 /pyproject.toml @dariero
 /uv.lock @dariero
 /pylock.toml @dariero
+/build-constraints.in @dariero
+/build-constraints.txt @dariero
 /config.py @dariero
 /models.py @dariero
 /pipeline.py @dariero

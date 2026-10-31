@@ -1,0 +1,6 @@
+# Build tools for locked packages that publish no Python 3.15 wheel, so a clean
+# install builds them from their hash-checked sdist. Today that is PyYAML 6.0.3,
+# whose sdist build needs setuptools and Cython 3. build-constraints.txt pins and
+# hash-checks them; README.md (Development) has the command that regenerates it.
+setuptools
+cython>=3.0

@@ -72,11 +72,11 @@ Install [uv](https://docs.astral.sh/uv/), then create and synchronize the enviro
 
 ```bash
 uv venv --python 3.15
-uv pip sync --preview-features pylock --require-hashes pylock.toml
+uv pip sync --preview-features pylock --require-hashes --build-constraints build-constraints.txt pylock.toml
 uv pip check
 ```
 
-`pyproject.toml` is the abstract dependency authority: NumPy, OpenAI, and Pydantic are runtime dependencies; pytest, pytest-cov, and RagaliQ are test/evaluation dependencies; mypy, pre-commit, pre-commit-hooks, and Ruff are development tooling. The committed `uv.lock` preserves uv's solver decisions and dependency graph. The universal, hash-bearing `pylock.toml` is exported from that solver state and remains the exact cross-platform public-install contract. The current locks are validated and reproduced with uv 0.13.6 for Python 3.15, and install the public `ragaliq==0.2.0` release rather than relying on an adjacent checkout.
+`pyproject.toml` is the abstract dependency authority: NumPy, OpenAI, and Pydantic are runtime dependencies; pytest, pytest-cov, and RagaliQ are test/evaluation dependencies; mypy, pre-commit, pre-commit-hooks, and Ruff are development tooling. The committed `uv.lock` preserves uv's solver decisions and dependency graph. The universal, hash-bearing `pylock.toml` is exported from that solver state. Together with `build-constraints.txt`, it is the exact cross-platform public-install contract: the two files pin and hash-check every package file that a clean install downloads. PyYAML 6.0.3 publishes no Python 3.15 wheel, so a clean install builds it from its hash-checked sdist with the setuptools and Cython that `build-constraints.txt` pins and hash-checks; `build-constraints.in` names them. The wheel that this build produces is not hash-checked, and whether it includes PyYAML's optional libyaml extension depends on the host. The current locks are validated and reproduced with uv 0.13.6 for Python 3.15, and install the public `ragaliq==0.2.0` release rather than relying on an adjacent checkout. uv reuses a PyYAML wheel that it built earlier from the same sdist, whichever tools built it, and a sync keeps an installed PyYAML. To rebuild PyYAML with the pinned tools in an existing environment, run `uv cache clean pyyaml`, then the sync with `--reinstall-package pyyaml` added.
 
 > **Platform support:** The command examples use POSIX shell syntax and paths. The free validation path is exercised locally on macOS and continuously on Ubuntu through GitHub Actions; native Windows command syntax and execution are not currently tested or claimed.
 
@@ -351,6 +351,8 @@ RagaliQ's native pytest plugin supplies `rag_tester`, `ClaudeJudge`, retrying tr
 ├── LICENSE                      # MIT license text
 ├── README.md                    # Setup, contracts, commands, and boundaries
 ├── SECURITY.md                  # Private vulnerability reporting policy
+├── build-constraints.in         # Build tools for locked packages without a Python 3.15 wheel
+├── build-constraints.txt        # Their pinned, hash-bearing versions for every install
 ├── config.py                    # Model, abstention, retrieval, and index constants
 ├── corpus.py                    # Corpus dictionaries and golden cases
 ├── models.py                    # RetrievedChunk, PromptMessage, and RagRecord
@@ -396,9 +398,9 @@ Ruff is the repository's formatter and linter. Mypy strictly checks the applicat
 
 GitHub Actions validates every ready pull request against its prospective merge result and validates `main` after each merge. CI installs the hash-locked Python 3.15 environment from a clean checkout, validates the pre-commit configuration, runs every repository hook, and runs the deterministic branch-coverage gate with OpenAI and RagaliQ paid markers explicitly excluded. Provider key variables are explicitly empty throughout the job, and the workflow does not reference provider secrets.
 
-GitHub natively ingests the committed `uv.lock` into the dependency graph, preserving exact versions and dependency relationships for Dependabot monitoring. CI independently requires `uv.lock` to satisfy `pyproject.toml` and requires its frozen export to match the committed `pylock.toml` byte for byte. The hash-bearing `pylock.toml` remains the public-install contract; it is not submitted as a second dependency inventory, so the graph has one full-fidelity lock authority and no repository workflow needs write permission for dependency submission.
+GitHub natively ingests the committed `uv.lock` into the dependency graph, preserving exact versions and dependency relationships for Dependabot monitoring. CI independently requires `uv.lock` to satisfy `pyproject.toml` and requires its frozen export to match the committed `pylock.toml` byte for byte. The hash-bearing `pylock.toml`, with `build-constraints.txt`, remains the public-install contract; neither file is submitted as a second dependency inventory, so the graph has one full-fidelity lock authority and no repository workflow needs write permission for dependency submission.
 
-Dependabot opens one grouped pull request a week for GitHub Actions updates, and Python packages move only through the upgrade-dependencies skill (`.agents/skills/upgrade-dependencies/SKILL.md`). Dependabot security updates are off, so an alert opens no pull request; a uv alert is fixed through the same skill.
+Dependabot opens one grouped pull request a week for GitHub Actions updates, and Python packages move only through the upgrade-dependencies skill (`.agents/skills/upgrade-dependencies/SKILL.md`). Dependabot security updates are off, so an alert opens no pull request; a uv alert is fixed through the same skill. Dependabot does not update `build-constraints.txt` either: the pinned build tools move only through that skill's compile command with `--upgrade`.
 
 Install the Git hook once per clone:
 
@@ -471,6 +473,18 @@ uvx --from uv==0.13.6 uv export \
 ```
 
 The project export path preserves the selected Python minor in `pylock.toml` as `==3.15.*`. Change `pyproject.toml` when the abstract requirements change, and update `uv.lock` and `pylock.toml` together whenever solver state changes. CI requires `uv.lock` to satisfy `pyproject.toml` and its frozen export to match the committed `pylock.toml` byte for byte.
+
+When `build-constraints.in` changes, or when moving the build tools is approved, regenerate the hash-bearing build constraints with the same uv version. Without `--upgrade`, uv keeps the versions already in `build-constraints.txt`; add `--upgrade` only to move them:
+
+```bash
+uvx --from uv==0.13.6 uv pip compile build-constraints.in \
+  --python 3.15 \
+  --prerelease disallow \
+  --generate-hashes \
+  --no-header \
+  --no-annotate \
+  -o build-constraints.txt
+```
 
 Model and provider integration remains behind explicit paid markers. A failing all-golden paid test is an acceptance result for the configured model pair, not permission to weaken a fixture expectation.
 
