@@ -1,6 +1,6 @@
 # VerdigrisE: An Inspectable RAG Mechanics Sandbox
 
-[![Python 3.14](https://img.shields.io/badge/python-3.14-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.15](https://img.shields.io/badge/python-3.15-blue.svg)](https://www.python.org/downloads/)
 [![RagaliQ 0.2.0](https://img.shields.io/badge/RagaliQ-0.2.0-7c3aed.svg)](https://pypi.org/project/ragaliq/0.2.0/)
 [![CI](https://github.com/dariero/VerdigrisE/actions/workflows/ci.yml/badge.svg?branch=main&event=push)](https://github.com/dariero/VerdigrisE/actions/workflows/ci.yml)
 ![Status: Public Sandbox](https://img.shields.io/badge/status-public%20sandbox-6b7280.svg)
@@ -64,19 +64,19 @@ Reasoning that an assertion would fail does not satisfy the step. If the loop co
 
 ## Installation
 
-VerdigrisE supports Python 3.14 (`>=3.14,<3.15`). RagaliQ 0.2.0 sets the same minimum, and Python 3.14 is the only version resolved and tested by this sandbox.
+VerdigrisE supports Python 3.15 (`>=3.15,<3.16`). RagaliQ 0.2.0 requires Python 3.14 or newer, and Python 3.15 is the only version resolved and tested by this sandbox.
 
 Git 2.31 or newer is required for the development workflow. pre-commit collects the working set with `git ls-files -z --deduplicate`, and `--deduplicate` was introduced in Git 2.31, so `pre-commit run --all-files` fails on older Git before any hook executes. The free suite, the coverage gate, and the installation commands above do not depend on this.
 
 Install [uv](https://docs.astral.sh/uv/), then create and synchronize the environment from the repository root:
 
 ```bash
-uv venv --python 3.14
+uv venv --python 3.15
 uv pip sync --preview-features pylock --require-hashes pylock.toml
 uv pip check
 ```
 
-`pyproject.toml` is the abstract dependency authority: NumPy, OpenAI, and Pydantic are runtime dependencies; pytest, pytest-cov, and RagaliQ are test/evaluation dependencies; mypy, pre-commit, pre-commit-hooks, and Ruff are development tooling. The committed `uv.lock` preserves uv's solver decisions and dependency graph. The universal, hash-bearing `pylock.toml` is exported from that solver state and remains the exact cross-platform public-install contract. The current locks are validated and reproduced with uv 0.13.6 for Python 3.14, and install the public `ragaliq==0.2.0` release rather than relying on an adjacent checkout.
+`pyproject.toml` is the abstract dependency authority: NumPy, OpenAI, and Pydantic are runtime dependencies; pytest, pytest-cov, and RagaliQ are test/evaluation dependencies; mypy, pre-commit, pre-commit-hooks, and Ruff are development tooling. The committed `uv.lock` preserves uv's solver decisions and dependency graph. The universal, hash-bearing `pylock.toml` is exported from that solver state and remains the exact cross-platform public-install contract. The current locks are validated and reproduced with uv 0.13.6 for Python 3.15, and install the public `ragaliq==0.2.0` release rather than relying on an adjacent checkout.
 
 > **Platform support:** The command examples use POSIX shell syntax and paths. The free validation path is exercised locally on macOS and continuously on Ubuntu through GitHub Actions; native Windows command syntax and execution are not currently tested or claimed.
 
@@ -345,7 +345,7 @@ RagaliQ's native pytest plugin supplies `rag_tester`, `ClaudeJudge`, retrying tr
 │   └── workflows/
 │       └── ci.yml               # Locked, secret-free pull-request validation
 ├── .pre-commit-config.yaml      # Ruff and repository-hygiene commit hooks
-├── .python-version              # Canonical Python 3.14 interpreter line
+├── .python-version              # Canonical Python 3.15 interpreter line
 ├── .gitignore                   # Secret, environment, index, and cache exclusions
 ├── AGENTS.md                    # Repository guidance, ownership rules, and review checklist
 ├── LICENSE                      # MIT license text
@@ -394,7 +394,7 @@ For compatibility, `load()` also accepts the previous root-level `manifest.json`
 
 Ruff is the repository's formatter and linter. Mypy strictly checks the application modules and RagaliQ adapter. Pytest-cov measures branch coverage over the same application/adapter scope and enforces a clean integer `fail_under = 95`; paid provider paths remain excluded. Pre-commit runs the static tools, the repository-hygiene hooks, and one repository-specific gate before commits: `agent-policy-symbols` runs `eval/check_agent_policy_symbols.py`, which resolves every backticked symbol reference in `AGENTS.md` and `.agents/skills/*/SKILL.md` against the names tracked modules actually bind, so a procedure file cannot keep naming a constant that was renamed. It runs over the whole set rather than the changed files, because renaming a constant in a module invalidates a reference in a policy file the same commit never touches. The same check runs as a free-suite node, so a clone that never installs the hook still catches the drift. Every hook uses `uv run --no-sync` and the hash-locked `.venv`; hook execution does not create separate environments or resolve additional packages. The sandbox still has no build backend, package-publication layer, or task runner. uv owns environment creation and exact dependency synchronization.
 
-GitHub Actions validates every ready pull request against its prospective merge result and validates `main` after each merge. CI installs the hash-locked Python 3.14 environment from a clean checkout, validates the pre-commit configuration, runs every repository hook, and runs the deterministic branch-coverage gate with OpenAI and RagaliQ paid markers explicitly excluded. Provider key variables are explicitly empty throughout the job, and the workflow does not reference provider secrets.
+GitHub Actions validates every ready pull request against its prospective merge result and validates `main` after each merge. CI installs the hash-locked Python 3.15 environment from a clean checkout, validates the pre-commit configuration, runs every repository hook, and runs the deterministic branch-coverage gate with OpenAI and RagaliQ paid markers explicitly excluded. Provider key variables are explicitly empty throughout the job, and the workflow does not reference provider secrets.
 
 GitHub natively ingests the committed `uv.lock` into the dependency graph, preserving exact versions and dependency relationships for Dependabot monitoring. CI independently requires `uv.lock` to satisfy `pyproject.toml` and requires its frozen export to match the committed `pylock.toml` byte for byte. The hash-bearing `pylock.toml` remains the public-install contract; it is not submitted as a second dependency inventory, so the graph has one full-fidelity lock authority and no repository workflow needs write permission for dependency submission.
 
@@ -457,20 +457,20 @@ When dependency metadata changes, update the committed solver state and regenera
 
 ```bash
 uvx --from uv==0.13.6 uv lock \
-  --python 3.14 \
+  --python 3.15 \
   --prerelease disallow
 uvx --from uv==0.13.6 uv export \
   --frozen \
   --format pylock.toml \
   --all-groups \
   --no-emit-project \
-  --python 3.14 \
+  --python 3.15 \
   --prerelease disallow \
   --no-header \
   -o pylock.toml
 ```
 
-The project export path preserves the selected Python minor in `pylock.toml` as `==3.14.*`. Change `pyproject.toml` when the abstract requirements change, and update `uv.lock` and `pylock.toml` together whenever solver state changes. CI requires `uv.lock` to satisfy `pyproject.toml` and its frozen export to match the committed `pylock.toml` byte for byte.
+The project export path preserves the selected Python minor in `pylock.toml` as `==3.15.*`. Change `pyproject.toml` when the abstract requirements change, and update `uv.lock` and `pylock.toml` together whenever solver state changes. CI requires `uv.lock` to satisfy `pyproject.toml` and its frozen export to match the committed `pylock.toml` byte for byte.
 
 Model and provider integration remains behind explicit paid markers. A failing all-golden paid test is an acceptance result for the configured model pair, not permission to weaken a fixture expectation.
 

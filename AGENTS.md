@@ -12,7 +12,7 @@ VerdigrisE is a public, local-first sandbox for inspectable RAG mechanics. Keep 
 
 ## Tooling and dependencies
 
-- Support Python 3.14 only, as defined by `.python-version`, `pyproject.toml`, `uv.lock`, and `pylock.toml`.
+- Support Python 3.15 only, as defined by `.python-version`, `pyproject.toml`, `uv.lock`, and `pylock.toml`.
 - Use uv for environment management. `pyproject.toml` is the abstract dependency authority, `uv.lock` preserves solver decisions and dependency edges, and the hash-bearing `pylock.toml` is the exact public-install contract exported from that solver state. Change `pyproject.toml` when abstract requirements change, and keep both locks synchronized whenever solver state changes.
 - Public clones must install the published `ragaliq` artifact. Never commit an editable sibling checkout, local path, machine-specific URL, or private package source.
 - Do not add or remove direct dependencies, change constraints, broaden the Python range, or introduce development tooling without explicit approval. Use `.agents/skills/upgrade-dependencies/SKILL.md` for approved dependency work.
@@ -56,8 +56,8 @@ Report only actionable issues introduced by the pull request, with the affected 
 - Check retrieval rank, stable-id tie-breaking, distance calculation, citations, prompt bytes, index schema and fingerprints, writer-unique staging, file and directory synchronization, atomic generation publication and active-pointer replacement, path-confined pointer validation, immutable single-generation loading, generation parsing, and deep `RagRecord` alignment immutability for unintended behavior changes. Readers must see a complete old or new generation, and concurrent writers must not mix files. Do not claim serialized writer ordering, automatic cleanup or rollback, network-filesystem guarantees, or durable generation provenance in `RagRecord`; completed inactive and crash-orphaned generations can remain.
 - Reject transfers of exact facts, units, qualifiers, ordering, citations, or abstention from deterministic pytest to probabilistic RagaliQ judging.
 - Flag any path that could execute OpenAI or Anthropic calls without an explicit paid marker and per-run approval, and any VerdigrisE-owned OpenAI client that bypasses `max_retries=0` or the 120-second timeout.
-- Require `pyproject.toml`, `uv.lock`, and `pylock.toml` consistency, a byte-identical frozen export, hashes, Python `==3.14.*` resolution, and published-package provenance; flag unexplained lock churn.
-- Check Python 3.14 compatibility and avoid assumptions derived from another interpreter version.
+- Require `pyproject.toml`, `uv.lock`, and `pylock.toml` consistency, a byte-identical frozen export, hashes, Python `==3.15.*` resolution, and published-package provenance; flag unexplained lock churn.
+- Check Python 3.15 compatibility and avoid assumptions derived from another interpreter version.
 - Reject absolute local paths, sibling-checkout requirements, private indexes, credentials, secret values, or developer-machine state that breaks a public clone.
 - Treat corpus order, stable ids, verbatim text, golden literals, collision siblings, exact absence, fixed vectors, expected ranks, and expected answers as coupled fixture data.
 - Flag backward-incompatible changes to `ask()`, the CLI, capture models, persisted-index schema, or documented RagaliQ integration surfaces unless intentional and documented.
@@ -68,5 +68,5 @@ Report only actionable issues introduced by the pull request, with the affected 
 Use this repository-specific review request:
 
 ```text
-@codex review for deterministic/RagaliQ ownership, dependency reproducibility, Python 3.14 compatibility, public-clone portability, paid-call safety, golden-fixture integrity, marker correctness, public API compatibility, and unintended behaviour changes
+@codex review for deterministic/RagaliQ ownership, dependency reproducibility, Python 3.15 compatibility, public-clone portability, paid-call safety, golden-fixture integrity, marker correctness, public API compatibility, and unintended behaviour changes
 ```
