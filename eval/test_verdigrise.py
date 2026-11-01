@@ -9,7 +9,9 @@ Ownership boundary:
 from __future__ import annotations
 
 import ast
+import asyncio
 import hashlib
+import inspect
 import json
 import pickle
 import re
@@ -27,7 +29,12 @@ import numpy as np
 import pytest
 from pydantic import BaseModel, ConfigDict, ValidationError
 from ragaliq import RAGTestResult
-from ragaliq.judges import DEFAULT_JUDGE_MODEL, TransportResponse
+from ragaliq.judges import (
+    DEFAULT_JUDGE_MODEL,
+    GOLD_STANDARD_JUDGE_MODEL,
+    ClaudeTransport,
+    TransportResponse,
+)
 
 import pipeline as pipeline_module
 from config import (
@@ -3246,8 +3253,8 @@ def test_ragaliq_canned_runner_executes_structural_wiring_locally(
             "max_tokens",
         }
         assert call["model"] == DEFAULT_JUDGE_MODEL
-        assert call["temperature"] == 0.0
-        assert call["max_tokens"] == 1024
+        assert call["temperature"] is None
+        assert call["max_tokens"] == 16000
 
     user_prompts: list[str] = []
     for call in transport.calls:
@@ -3278,8 +3285,8 @@ def test_ragaliq_canned_runner_marks_below_threshold_relevance_as_failed(
             system_prompt: str,
             user_prompt: str,
             model: str = DEFAULT_JUDGE_MODEL,
-            temperature: float = 0.0,
-            max_tokens: int = 1024,
+            temperature: float | None = None,
+            max_tokens: int = 16000,
         ) -> TransportResponse:
             response = await super().send(
                 system_prompt,
@@ -3310,6 +3317,51 @@ def test_ragaliq_canned_runner_marks_below_threshold_relevance_as_failed(
     assert result.passed is False
     assert result.scores == {"faithfulness": 1.0, "relevance": 0.6}
     assert result.test_case == test_case
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        pytest.param(DEFAULT_JUDGE_MODEL, id="default-model"),
+        pytest.param(GOLD_STANDARD_JUDGE_MODEL, id="gold-model"),
+    ],
+)
+def test_ragaliq_claude_transport_passes_only_keywords_the_installed_anthropic_accepts(
+    model: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every keyword RagaliQ's Claude transport passes must exist on the installed SDK.
+
+    ragaliq 0.2.0 passed `temperature` to `AsyncMessages.create`, which anthropic 2.x does
+    not declare, so every paid judge call raised TypeError before any request was sent.
+    The two models take the two request branches of 0.3.0, with and without a `thinking`
+    setting. The patched client records the keywords and stops the call, so nothing
+    leaves the machine.
+    """
+    from anthropic.resources.messages import AsyncMessages
+
+    class _StopBeforeRequest(Exception):
+        pass
+
+    captured: dict[str, object] = {}
+
+    class _RecordingMessages:
+        async def create(self, **kwargs: object) -> object:
+            captured.update(kwargs)
+            raise _StopBeforeRequest
+
+    def _recording_client(*, api_key: str) -> object:
+        return SimpleNamespace(messages=_RecordingMessages())
+
+    monkeypatch.setattr("ragaliq.judges.transport.AsyncAnthropic", _recording_client)
+    transport = ClaudeTransport(api_key="offline-test-key")
+    with pytest.raises(_StopBeforeRequest):
+        asyncio.run(transport.send("system", "user", model=model, temperature=None, max_tokens=64))
+    accepted = set(inspect.signature(AsyncMessages.create).parameters)
+    assert captured, "ClaudeTransport never reached messages.create"
+    assert sorted(set(captured) - accepted) == []
+    assert "temperature" not in captured
+    assert captured.get("extra_body") is None
 
 
 def _marked_item(*markers: str) -> Any:
