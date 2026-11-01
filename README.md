@@ -1,7 +1,7 @@
 # VerdigrisE: An Inspectable RAG Mechanics Sandbox
 
 [![Python 3.15](https://img.shields.io/badge/python-3.15-blue.svg)](https://www.python.org/downloads/)
-[![RagaliQ 0.2.0](https://img.shields.io/badge/RagaliQ-0.2.0-7c3aed.svg)](https://pypi.org/project/ragaliq/0.2.0/)
+[![RagaliQ 0.3.0](https://img.shields.io/badge/RagaliQ-0.3.0-7c3aed.svg)](https://pypi.org/project/ragaliq/0.3.0/)
 [![CI](https://github.com/dariero/VerdigrisE/actions/workflows/ci.yml/badge.svg?branch=main&event=push)](https://github.com/dariero/VerdigrisE/actions/workflows/ci.yml)
 ![Status: Public Sandbox](https://img.shields.io/badge/status-public%20sandbox-6b7280.svg)
 ![Evaluation: Deterministic First](https://img.shields.io/badge/evaluation-deterministic%20first-0f766e.svg)
@@ -64,7 +64,7 @@ Reasoning that an assertion would fail does not satisfy the step. If the loop co
 
 ## Installation
 
-VerdigrisE supports Python 3.15 (`>=3.15,<3.16`). RagaliQ 0.2.0 requires Python 3.14 or newer, and Python 3.15 is the only version resolved and tested by this sandbox.
+VerdigrisE supports Python 3.15 (`>=3.15,<3.16`). RagaliQ 0.3.0 requires Python 3.14 or newer, and Python 3.15 is the only version resolved and tested by this sandbox.
 
 Git 2.31 or newer is required for the development workflow. pre-commit collects the working set with `git ls-files -z --deduplicate`, and `--deduplicate` was introduced in Git 2.31, so `pre-commit run --all-files` fails on older Git before any hook executes. The free suite, the coverage gate, and the installation commands above do not depend on this.
 
@@ -76,7 +76,7 @@ uv pip sync --preview-features pylock --require-hashes --build-constraints build
 uv pip check
 ```
 
-`pyproject.toml` is the abstract dependency authority: NumPy, OpenAI, and Pydantic are runtime dependencies; pytest, pytest-cov, and RagaliQ are test/evaluation dependencies; mypy, pre-commit, pre-commit-hooks, and Ruff are development tooling. The committed `uv.lock` preserves uv's solver decisions and dependency graph. The universal, hash-bearing `pylock.toml` is exported from that solver state. Together with `build-constraints.txt`, it is the exact cross-platform public-install contract: the two files pin and hash-check every package file that a clean install downloads. PyYAML 6.0.3 publishes no Python 3.15 wheel, so a clean install builds it from its hash-checked sdist with the setuptools and Cython that `build-constraints.txt` pins and hash-checks; `build-constraints.in` names them. The wheel that this build produces is not hash-checked, and whether it includes PyYAML's optional libyaml extension depends on the host. The current locks are validated and reproduced with uv 0.13.6 for Python 3.15, and install the public `ragaliq==0.2.0` release rather than relying on an adjacent checkout. uv reuses a PyYAML wheel that it built earlier from the same sdist, whichever tools built it, and a sync keeps an installed PyYAML. To rebuild PyYAML with the pinned tools in an existing environment, run `uv cache clean pyyaml`, then the sync with `--reinstall-package pyyaml` added.
+`pyproject.toml` is the abstract dependency authority: NumPy, OpenAI, and Pydantic are runtime dependencies; pytest, pytest-cov, and RagaliQ are test/evaluation dependencies; mypy, pre-commit, pre-commit-hooks, and Ruff are development tooling. The committed `uv.lock` preserves uv's solver decisions and dependency graph. The universal, hash-bearing `pylock.toml` is exported from that solver state. Together with `build-constraints.txt`, it is the exact cross-platform public-install contract: the two files pin and hash-check every package file that a clean install downloads. PyYAML 6.0.3 publishes no Python 3.15 wheel, so a clean install builds it from its hash-checked sdist with the setuptools and Cython that `build-constraints.txt` pins and hash-checks; `build-constraints.in` names them. The wheel that this build produces is not hash-checked, and whether it includes PyYAML's optional libyaml extension depends on the host. The current locks are validated and reproduced with uv 0.13.6 for Python 3.15, and install the public `ragaliq==0.3.0` release rather than relying on an adjacent checkout. uv reuses a PyYAML wheel that it built earlier from the same sdist, whichever tools built it, and a sync keeps an installed PyYAML. To rebuild PyYAML with the pinned tools in an existing environment, run `uv cache clean pyyaml`, then the sync with `--reinstall-package pyyaml` added.
 
 > **Platform support:** The command examples use POSIX shell syntax and paths. The free validation path is exercised locally on macOS and continuously on Ubuntu through GitHub Actions; native Windows command syntax and execution are not currently tested or claimed.
 
@@ -275,22 +275,22 @@ The semantic test carries both markers because it judges live OpenAI answers. Be
 
 ## RagaliQ Integration Reference
 
-VerdigrisE installs the published `ragaliq==0.2.0` artifact from PyPI. The release's source tag resolves to the same commit whose public API was inspected for this integration.
+VerdigrisE installs the published `ragaliq==0.3.0` artifact from PyPI. The release's source tag resolves to the same commit whose public API was inspected for this integration.
 
 | Provenance Field | Value |
 |---|---|
-| Package source | [`ragaliq==0.2.0` on PyPI](https://pypi.org/project/ragaliq/0.2.0/) |
-| Package version | `0.2.0` |
-| Source tag | [`v0.2.0`](https://github.com/dariero/RagaliQ/releases/tag/v0.2.0) |
-| Inspected commit | `ac1c7ce9e38c9308736afd4400c5a9471c25255c` |
+| Package source | [`ragaliq==0.3.0` on PyPI](https://pypi.org/project/ragaliq/0.3.0/) |
+| Package version | `0.3.0` |
+| Source tag | [`v0.3.0`](https://github.com/dariero/RagaliQ/releases/tag/v0.3.0) |
+| Inspected commit | `71758514c132e68b7e40fe239b596962548862c3` |
 | Free integration path | `CannedJudgeTransport -> BaseJudge -> RagaliQ` |
 | Paid integration path | Native `rag_tester` fixture with `ClaudeJudge` |
 | Evaluators | `faithfulness`, `relevance` |
 | Semantic case handoff | `id`, derived `name`, `query`, `context=[record.context_payload]`, `response`, and semantic tags |
 
-Public objects used are `RagaliQ`, `RAGTestCase`, `RAGTestResult`, `BaseJudge`, `JudgeConfig`, `JudgeTransport`, `TransportResponse`, and `DEFAULT_JUDGE_MODEL`.
+Public objects used are `RagaliQ`, `RAGTestCase`, `RAGTestResult`, `BaseJudge`, `JudgeConfig`, `JudgeTransport`, `TransportResponse`, `ClaudeTransport`, `DEFAULT_JUDGE_MODEL`, and `GOLD_STANDARD_JUDGE_MODEL`. One free test replaces `ragaliq.judges.transport.AsyncAnthropic` with a recording fake. No anthropic client is built and no request is sent. The test also reads the parameters of anthropic's `AsyncMessages.create`.
 
-RagaliQ 0.2.0 strips surrounding whitespace from the mapped query, response, and each context entry; the source `RagRecord` retains provider text verbatim. The mapping passes `context=[record.context_payload]`, so both retrieved chunks are concatenated into one logical RagaliQ document. This integration therefore cannot expose per-chunk source attribution or context precision. VerdigrisE deliberately leaves RagaliQ's `expected_answer` and `expected_facts` unset. Exact answers, facts, units, qualifiers, citations, ordering, and abstention remain deterministic pytest responsibilities.
+RagaliQ 0.3.0 strips surrounding whitespace from the mapped query, response, and each context entry; the source `RagRecord` retains provider text verbatim. The mapping passes `context=[record.context_payload]`, so both retrieved chunks are concatenated into one logical RagaliQ document. This integration therefore cannot expose per-chunk source attribution or context precision. VerdigrisE deliberately leaves RagaliQ's `expected_answer` and `expected_facts` unset. Exact answers, facts, units, qualifiers, citations, ordering, and abstention remain deterministic pytest responsibilities.
 
 Exact signatures relied upon:
 
@@ -323,8 +323,8 @@ async JudgeTransport.send(
     system_prompt: str,
     user_prompt: str,
     model: str = DEFAULT_JUDGE_MODEL,
-    temperature: float = 0.0,
-    max_tokens: int = 1024,
+    temperature: float | None = None,
+    max_tokens: int = 16000,
 ) -> TransportResponse
 ```
 
@@ -607,4 +607,4 @@ Because a RAG system's most dangerous failures are the ones that never surface. 
 
 ## License
 
-VerdigrisE is licensed under the [MIT License](LICENSE). The RagaliQ dependency is separately MIT licensed — see [RagaliQ's LICENSE](https://github.com/dariero/RagaliQ/blob/v0.2.0/LICENSE).
+VerdigrisE is licensed under the [MIT License](LICENSE). The RagaliQ dependency is separately MIT licensed — see [RagaliQ's LICENSE](https://github.com/dariero/RagaliQ/blob/v0.3.0/LICENSE).

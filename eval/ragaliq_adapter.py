@@ -1,4 +1,4 @@
-"""VerdigrisE adapters against RagaliQ's published 0.2.0 API.
+"""VerdigrisE adapters against RagaliQ's published 0.3.0 API.
 
 RagaliQ owns semantic residue only. The deterministic suite owns exact ids,
 numbers, citations, prompt bytes, ranking, distances, and abstention.
@@ -31,8 +31,8 @@ class CannedJudgeTransport:
         system_prompt: str,
         user_prompt: str,
         model: str = DEFAULT_JUDGE_MODEL,
-        temperature: float = 0.0,
-        max_tokens: int = 1024,
+        temperature: float | None = None,
+        max_tokens: int = 16000,
     ) -> TransportResponse:
         self.calls.append(
             {
@@ -69,8 +69,6 @@ def build_ragaliq_runner(transport: JudgeTransport) -> RagaliQ:
         transport=transport,
         config=JudgeConfig(
             model=DEFAULT_JUDGE_MODEL,
-            temperature=0.0,
-            max_tokens=1024,
         ),
     )
     return RagaliQ(
