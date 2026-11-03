@@ -16,7 +16,7 @@ VerdigrisE is a public, local-first sandbox for inspectable RAG mechanics. Keep 
 - Use uv for environment management. `pyproject.toml` is the abstract dependency authority, `uv.lock` preserves solver decisions and dependency edges, and the hash-bearing `pylock.toml`, exported from that solver state, is the exact public-install contract together with the hash-bearing `build-constraints.txt`, which pins the build tools of every locked package that has no Python 3.15 wheel (PyYAML 6.0.3 today). Together they pin and hash-check every package file that an install downloads; a wheel built from an sdist during the install is not hash-checked. Change `pyproject.toml` when abstract requirements change, and keep both locks synchronized whenever solver state changes.
 - Public clones must install the published `ragaliq` artifact. Never commit an editable sibling checkout, local path, machine-specific URL, or private package source.
 - Do not add or remove direct dependencies, change constraints, broaden the Python range, or introduce development tooling without explicit approval. Use `.agents/skills/upgrade-dependencies/SKILL.md` for approved dependency work.
-- Ruff is the configured formatter and linter. Mypy strictly checks the application modules and RagaliQ adapter. Pytest-cov enforces the measured branch-coverage floor over that application/adapter scope. Pre-commit runs the static tools and repository-hygiene hooks. This repository has no build backend or task runner; use only the commands documented in `README.md`.
+- Ruff is the configured formatter and linter. Mypy strictly checks `config.py`, `corpus.py`, `models.py`, `pipeline.py`, and the RagaliQ adapter. Pytest-cov enforces the measured branch-coverage floor over that scope; `benchmark_retrieval.py` is outside both. Pre-commit runs the static tools and repository-hygiene hooks. This repository has no build backend or task runner; use only the commands documented in `README.md` and in the `.agents/skills/` procedures.
 
 ## Testing and paid-call safety
 
@@ -33,7 +33,7 @@ Any command that can contact OpenAI or Anthropic requires explicit approval for 
 
 ## Git and pull requests
 
-- `main` is protected. Start task branches from current `origin/main`; use `codex/<short-slug>` for Codex work and never push directly to `main`.
+- `main` is protected. Start task branches from current `origin/main`; use `codex/<short-slug>` for every agent task branch and never push directly to `main`.
 - Preserve unrelated user work. Keep commits and pull requests atomic, stage explicit paths, and exclude secrets, `.env` files, `.index/`, caches, editor files, and other generated artifacts.
 - Use a concise conventional commit subject consistent with repository history. Do not add AI attribution trailers unless requested.
 - Before shipping, run every pre-commit hook against all files, run the supported free suite, and inspect the complete staged diff.
