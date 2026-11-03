@@ -258,7 +258,7 @@ raw corpus dictionary
 | Free deterministic contracts | `.venv/bin/python -m pytest eval/ -q` | Fixed embeddings and answers, provider fakes, exact contracts, plus canned-transport RagaliQ wiring |
 | Free deterministic branch coverage | `.venv/bin/python -m pytest --cov --cov-report=term-missing eval/ -q` | The same free suite measures application/adapter branches and enforces the 95% floor |
 | Paid all-golden OpenAI acceptance | `.venv/bin/python -m pytest -m "openai and not rag_test" eval/ -q` | One corpus embedding batch plus seven query embeddings and seven generations: at most 15 OpenAI SDK attempts |
-| Paid cross-family semantic evaluation | `.venv/bin/python -m pytest -m "openai and rag_test" --ragaliq-cost-limit 5.00 eval/ -q` | One corpus embedding batch plus six query embeddings and six generations: at most 13 OpenAI SDK attempts; then six answerable cases judged by native RagaliQ Claude faithfulness and relevance |
+| Paid cross-family semantic evaluation | `.venv/bin/python -m pytest -m "openai and rag_test" --ragaliq-cost-limit 5.00 eval/ -q` | One corpus embedding batch plus six query embeddings and six generations: at most 13 OpenAI SDK attempts; then six answerable cases judged for faithfulness and relevance by RagaliQ's native Claude judge, `claude-opus-5-5` |
 
 The module-scoped paid pipeline embeds the corpus once, while each selected parametrized node asks only its own case. For `n` selected nodes from one paid tier, the maximum OpenAI SDK fan-out is `1 + 2n` attempts: one corpus embedding, `n` query embeddings, and `n` generations. A single selected node therefore makes at most 3 attempts. The complete all-golden tier makes at most 15 attempts for seven cases; the complete semantic tier makes at most 13 OpenAI attempts for six answerable cases before RagaliQ judging. Early failures can reduce these counts, and `max_retries=0` prevents OpenAI SDK retries from multiplying them. A timeout does not prove provider-side cancellation, so final cost remains uncertain. RagaliQ's Claude transport retains its own retry behavior and model-output-dependent fan-out.
 
@@ -284,7 +284,7 @@ VerdigrisE installs the published `ragaliq==0.3.0` artifact from PyPI. The relea
 | Source tag | [`v0.3.0`](https://github.com/dariero/RagaliQ/releases/tag/v0.3.0) |
 | Inspected commit | `71758514c132e68b7e40fe239b596962548862c3` |
 | Free integration path | `CannedJudgeTransport -> BaseJudge -> RagaliQ` |
-| Paid integration path | Native `rag_tester` fixture with `ClaudeJudge` |
+| Paid integration path | Native `rag_tester` fixture with `ClaudeJudge` on `claude-opus-5-5` (`--ragaliq-model` in `pyproject.toml` addopts) |
 | Evaluators | `faithfulness`, `relevance` |
 | Semantic case handoff | `id`, derived `name`, `query`, `context=[record.context_payload]`, `response`, and semantic tags |
 
@@ -328,7 +328,7 @@ async JudgeTransport.send(
 ) -> TransportResponse
 ```
 
-RagaliQ's native pytest plugin supplies `rag_tester`, `ClaudeJudge`, retrying transport, `TraceCollector`, estimated cost summaries, and `--ragaliq-cost-limit`. Its `openai` judge selector is declared but raises `NotImplementedError`, so VerdigrisE does not use it.
+RagaliQ's native pytest plugin supplies `rag_tester`, `ClaudeJudge`, retrying transport, `TraceCollector`, estimated cost summaries, `--ragaliq-model`, and `--ragaliq-cost-limit`. VerdigrisE pins the judge to RagaliQ's gold model, `claude-opus-5-5`, with `--ragaliq-model` in `pyproject.toml` addopts. Without it, the plugin uses RagaliQ's default, which changed with the 0.3.0 release, and that default, `claude-sonnet-5-5`, refused to judge the relevance of some generated answers. Its `openai` judge selector is declared but raises `NotImplementedError`, so VerdigrisE does not use it.
 
 ---
 

@@ -3252,7 +3252,7 @@ def test_ragaliq_canned_runner_executes_structural_wiring_locally(
             "temperature",
             "max_tokens",
         }
-        assert call["model"] == DEFAULT_JUDGE_MODEL
+        assert call["model"] == GOLD_STANDARD_JUDGE_MODEL
         assert call["temperature"] is None
         assert call["max_tokens"] == 16000
 
@@ -3449,15 +3449,44 @@ def test_default_marker_policy_excludes_both_paid_tiers() -> None:
     config = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     pytest_config = config.get("tool", {}).get("pytest", {})
 
-    assert pytest_config.get("addopts") == ["-m", "not openai and not rag_test"], (
-        "The default pytest selection no longer excludes both paid markers. An unattended "
-        "`pytest eval/` would select paid OpenAI and RagaliQ nodes and spend real money "
-        "on any machine where the provider keys are exported."
+    assert pytest_config.get("addopts") == [
+        "-m",
+        "not openai and not rag_test",
+        "--ragaliq-model=claude-opus-5-5",
+    ], (
+        "The default pytest options changed. They must exclude both paid markers, so an "
+        "unattended `pytest eval/` cannot select paid OpenAI and RagaliQ nodes and spend real "
+        "money where the provider keys are exported, and they pin the paid judge model."
     )
     assert sorted(marker.split(":")[0] for marker in pytest_config.get("markers", [])) == [
         "openai",
         "rag_test",
     ], "Both paid markers must stay registered for the default exclusion to select anything."
+
+
+def test_paid_judge_is_pinned_to_ragaliq_gold_model() -> None:
+    """The paid judge in addopts and the canned runner's model must stay the same model.
+
+    Without `--ragaliq-model`, RagaliQ's plugin judges with its `DEFAULT_JUDGE_MODEL`, which
+    moved from claude-sonnet-4-6 to claude-sonnet-5-5 inside the ragaliq 0.3.0 bump. In
+    measurements of 2026-11-01 and 2026-11-03, claude-sonnet-5-5 refused to judge the relevance
+    of some generated answers and claude-opus-5-5 did not, so addopts pins claude-opus-5-5 as a
+    literal. The canned runner follows RagaliQ's `GOLD_STANDARD_JUDGE_MODEL`, so a RagaliQ
+    release that moves its gold model fails here.
+    """
+
+    pyproject = eval_conftest.PROJECT_ROOT / "pyproject.toml"
+    config = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    addopts = config["tool"]["pytest"]["addopts"]
+    pinned = [
+        option.split("=", 1)[1] for option in addopts if option.startswith("--ragaliq-model=")
+    ]
+
+    assert pinned == [GOLD_STANDARD_JUDGE_MODEL], (
+        "RagaliQ's gold model no longer matches the paid judge pinned in addopts. Measure the new "
+        "model on the golden and generated answers before re-pinning; do not re-pin to turn "
+        "the suite green."
+    )
 
 
 def _tracked_paths() -> list[str]:

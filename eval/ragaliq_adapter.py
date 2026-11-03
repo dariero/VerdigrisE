@@ -11,6 +11,7 @@ import json
 from ragaliq import RagaliQ, RAGTestCase
 from ragaliq.judges import (
     DEFAULT_JUDGE_MODEL,
+    GOLD_STANDARD_JUDGE_MODEL,
     BaseJudge,
     JudgeConfig,
     JudgeTransport,
@@ -63,12 +64,15 @@ class CannedJudgeTransport:
 
 
 def build_ragaliq_runner(transport: JudgeTransport) -> RagaliQ:
-    """Wire a canned transport through the real two-evaluator RagaliQ path."""
+    """Wire a canned transport through the real two-evaluator RagaliQ path.
+
+    The judge model is the paid tier's: pyproject.toml addopts pins RagaliQ's gold model.
+    """
 
     judge = BaseJudge(
         transport=transport,
         config=JudgeConfig(
-            model=DEFAULT_JUDGE_MODEL,
+            model=GOLD_STANDARD_JUDGE_MODEL,
         ),
     )
     return RagaliQ(

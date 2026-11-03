@@ -35,7 +35,7 @@ package = false
 [tool.pytest]
 minversion = "9.1"
 testpaths = ["eval"]
-addopts = ["-m", "not openai and not rag_test"]
+addopts = ["-m", "not openai and not rag_test", "--ragaliq-model=claude-opus-5-5"]
 strict_config = true
 strict_markers = true
 markers = [
