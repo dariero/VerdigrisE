@@ -6,17 +6,15 @@
 ![Status: Public Sandbox](https://img.shields.io/badge/status-public%20sandbox-6b7280.svg)
 ![Evaluation: Deterministic First](https://img.shields.io/badge/evaluation-deterministic%20first-0f766e.svg)
 
-**VerdigrisE** is a public, local-first RAG sandbox built around an executable alchemical-blossom grimoire fixture. It keeps corpus strings, embedding rows, indexed metadata, top-2 retrieval, prompt bytes, generated answers, and evaluation records inspectable — **numeric source conflicts**, **near-synonym collisions**, **mandatory qualifiers**, **original-unit preservation**, and **exact abstention** all become testable failures — while preserving a direct ladder toward citation-critical technical-document systems.
+**VerdigrisE** is a public, local-first RAG sandbox built around an executable alchemical-blossom grimoire fixture. It keeps corpus strings, embedding rows, indexed metadata, top-2 retrieval, prompt bytes, generated answers, and evaluation records inspectable. Numeric source conflicts, near-synonym collisions, mandatory qualifiers, original-unit preservation, and exact abstention all become testable failures, and the design keeps a direct ladder toward citation-critical technical-document systems.
 
 ---
 
 ## Why VerdigrisE?
 
-When a RAG pipeline answers fluently, how do you know the number came from the right source? How do you catch an answer that swaps a near-synonym's dosage for the one you asked about? How do you prove the system abstains when the corpus genuinely lacks the fact?
+Production retrieval systems can hide source attribution errors behind fluent, grounded prose. VerdigrisE makes those errors observable with numeric source conflicts, near-synonym collisions, mandatory qualifiers, original-unit preservation, and an exact out-of-corpus abstention case, each materialized as a golden case with exact expected evidence and forbidden literals.
 
-Production retrieval systems can hide source attribution errors behind fluent, grounded prose. VerdigrisE makes those errors observable with numeric source conflicts, near-synonym collisions, mandatory qualifiers, original-unit preservation, and an exact out-of-corpus abstention case — each materialized as a golden case with exact expected evidence and forbidden literals.
-
-> **Scope:** This rung deliberately stops before PDF parsing, table extraction, hybrid retrieval, reranking, access controls, or service orchestration. It is for tracing the core mechanics and fixing evaluation ownership before adding production infrastructure — see [Production Boundary](#production-boundary).
+> **Scope:** This rung deliberately stops before PDF parsing, table extraction, hybrid retrieval, reranking, access controls, or service orchestration. It is for tracing the core mechanics and fixing evaluation ownership before adding production infrastructure; see [Production Boundary](#production-boundary).
 
 ---
 
@@ -24,7 +22,7 @@ Production retrieval systems can hide source attribution errors behind fluent, g
 
 A passing test proves an assertion ran. It does not prove the assertion constrains anything.
 
-The distinction has a name in QA practice. A *test case* exercises the system; an *assertion* is the claim inside it that must hold; a *quality gate* is the rule that stops a change when an assertion breaks. None of those three guarantees the fourth thing, which is the only one that matters: that the assertion would have failed had the behaviour been wrong. An assertion that would pass against a broken implementation is decorative. It costs the same to run as a real one and it reports the same green.
+The distinction has a name in QA practice. A *test case* exercises the system; an *assertion* is the claim inside it that must hold; a *quality gate* is the rule that stops a change when an assertion breaks. None of the three guarantees a fourth property: that the assertion would have failed had the behaviour been wrong. An assertion that would pass against a broken implementation is decorative. It costs the same to run as a real one and it reports the same green.
 
 The standard way to measure this is *mutation testing*: deliberately break the code, run the suite, and see whether it notices. A break the suite catches is a killed mutant, and it proves the assertion covering it is load-bearing. A break the suite ignores is a surviving mutant, and it names a defect class the suite cannot see. Line coverage cannot substitute for this, because a line executed by a tautological assertion is a covered line.
 
@@ -35,15 +33,15 @@ VerdigrisE inverts the usual arrangement. In an ordinary project the mutants are
 - `shadeglass-orchid-harvest` (in `corpus.py::CORPUS`) carries a qualifier that is only valid when the plant was grown entirely in shade, so dropping the condition turns a correct value into a wrong instruction.
 - One golden case asks for a fact the corpus genuinely does not contain, so confident invention is a failure rather than a judgement call.
 
-The pipeline is the code under test. The evaluation suite is what is being validated. That inversion sets the standard: a green suite against a softened corpus has not passed, it has failed, and it has failed silently. Weakening a trap to make a test go green destroys the only evidence the test was ever producing.
+The pipeline is the code under test, and the evaluation suite is what is being validated. A green suite against a softened corpus is therefore a silent failure. Weakening a trap to make a test go green destroys the only evidence the test was producing.
 
-This is not hypothetical here. A mutation sweep of the free suite found that every assertion it failed to kill shared one shape: a value read from the artifact under test and compared against itself. Deleting the shade qualifier from the evidence text left the suite green, because the qualifier was asserted against `expected_answer`, which the fixture also authored. `eval/test_verdigrise.py::FixedAnswerGenerator` returns `case.expected_answer` verbatim, so any assertion comparing the answer to the fixture's own literal is a statement about the fixture agreeing with itself. Each of those assertions looked correct when read. Each passed forever.
+A mutation sweep of the free suite found that every assertion it failed to kill shared one shape: a value read from the artifact under test and compared against itself. Deleting the shade qualifier from the evidence text left the suite green, because the qualifier was asserted against `expected_answer`, which the fixture also authored. `eval/test_verdigrise.py::FixedAnswerGenerator` returns `case.expected_answer` verbatim, so any assertion comparing the answer to the fixture's own literal is a statement about the fixture agreeing with itself. Each of those assertions looked correct when read, and each would have kept passing.
 
 The repairs are visible in the suite. `eval/test_verdigrise.py::test_required_qualifiers_appear_in_the_expected_evidence_text` now checks the qualifier against the corpus text rather than against the answer. `eval/test_verdigrise.py::test_every_collision_sibling_conflict_literal_is_forbidden` checks completeness of every trap family rather than one. `eval/test_verdigrise.py::test_corpus_order_is_pinned` and `eval/test_verdigrise.py::test_condition_metadata_is_pinned` pin fixture data that was previously free to drift.
 
-Because reading an assertion is not enough to tell the two apart, step 11 of the maintain-golden-contract skill (`.agents/skills/maintain-golden-contract/SKILL.md`) makes the proof mechanical. Every new or changed assertion must name the single edit that should break it, and that edit must actually be executed: snapshot the file's bytes, apply one minimal mutation, run the free suite with markers selected explicitly, confirm the named node FAILS, restore the exact bytes, confirm green, and record the FAILED node id in the pull-request body.
+Because reading an assertion is not enough to tell the two apart, step 11 of the maintain-golden-contract skill (`.agents/skills/maintain-golden-contract/SKILL.md`) makes the proof mechanical. Every new or changed assertion must name the single edit that should break it, and that edit must be executed: snapshot the file's bytes, apply one minimal mutation, run the free suite with markers selected explicitly, confirm the named node FAILS, restore the exact bytes, confirm green, and record the FAILED node id in the pull-request body.
 
-Reasoning that an assertion would fail does not satisfy the step. If the loop comes back green, it has not proved the assertion is fine. It has found a defect.
+Reasoning that an assertion would fail does not satisfy the step. A loop that comes back green has found a defect in the assertion.
 
 ---
 
@@ -66,7 +64,7 @@ Reasoning that an assertion would fail does not satisfy the step. If the loop co
 
 VerdigrisE supports Python 3.15 (`>=3.15,<3.16`). RagaliQ 0.3.0 requires Python 3.14 or newer, and Python 3.15 is the only version resolved and tested by this sandbox.
 
-Git 2.31 or newer is required for the development workflow. pre-commit collects the working set with `git ls-files -z --deduplicate`, and `--deduplicate` was introduced in Git 2.31, so `pre-commit run --all-files` fails on older Git before any hook executes. The free suite, the coverage gate, and the installation commands above do not depend on this.
+Git 2.31 or newer is required for the development workflow. pre-commit collects the working set with `git ls-files -z --deduplicate`, and `--deduplicate` was introduced in Git 2.31, so `pre-commit run --all-files` fails on older Git before any hook executes. The free suite, the coverage gate, and the installation commands below do not depend on this.
 
 Install [uv](https://docs.astral.sh/uv/), then create and synchronize the environment from the repository root:
 
@@ -148,7 +146,7 @@ With `--debug`, the additional `verdigrise_embedding_debug` line includes only s
 
 ## Evaluation Ownership
 
-VerdigrisE splits evaluation between two owners — exact concerns belong to deterministic pytest, semantic concerns belong to RagaliQ:
+VerdigrisE splits evaluation between two owners. Exact concerns belong to deterministic pytest, and semantic concerns belong to RagaliQ:
 
 | Concern | Owner | Assertion Surface |
 |---|---|---|
@@ -230,7 +228,7 @@ class RagRecord(BaseModel):
     answer: str
 ```
 
-The model validators reject rank misalignment between `retrieved_ids`, `retrieved_chunks`, and `distances`. They also require each retrieval metric to be finite, constrain similarity to `[-1, 1]` and distance to `[0, 2]`, and enforce `distance = 1 - similarity` within an absolute `1e-12` tolerance without clamping or rewriting caller values. Rank-bearing sequences are immutable tuples, and nested metadata mappings and sequences are recursively read-only, so a valid capture cannot silently drift after construction. Metadata accepts only string-keyed mappings, ordered sequences, and JSON scalar leaves; unsupported mutable objects are rejected. Capture object schemas are closed: unknown model fields, including misspelled `model_copy(update=...)` keys and unknown nested chunk or prompt-message fields, are rejected instead of discarded, while retrieval metadata remains the explicitly extensible mapping. Constructors continue to accept ordinary lists and dictionaries, updated model copies are revalidated, and `model_dump()` and `model_dump_json()` preserve the public array and object shapes.
+Validation rejects rank misalignment between `retrieved_ids`, `retrieved_chunks`, and `distances`. It also requires each retrieval metric to be finite, constrains similarity to `[-1, 1]` and distance to `[0, 2]`, and enforces `distance = 1 - similarity` within an absolute `1e-12` tolerance without clamping or rewriting caller values. Rank-bearing sequences are immutable tuples, and nested metadata mappings and sequences are recursively read-only, so a valid capture cannot silently drift after construction. Metadata accepts only string-keyed mappings, ordered sequences, and JSON scalar leaves; unsupported mutable objects are rejected. Capture object schemas are closed: unknown model fields, including misspelled `model_copy(update=...)` keys and unknown nested chunk or prompt-message fields, are rejected instead of discarded, while retrieval metadata remains the explicitly extensible mapping. Constructors continue to accept ordinary lists and dictionaries, updated model copies are revalidated, and `model_dump()` and `model_dump_json()` preserve the public array and object shapes.
 
 ```text
 raw corpus dictionary
@@ -258,9 +256,9 @@ raw corpus dictionary
 | Free deterministic contracts | `.venv/bin/python -m pytest eval/ -q` | Fixed embeddings and answers, provider fakes, exact contracts, plus canned-transport RagaliQ wiring |
 | Free deterministic branch coverage | `.venv/bin/python -m pytest --cov --cov-report=term-missing eval/ -q` | The same free suite measures application/adapter branches and enforces the 95% floor |
 | Paid all-golden OpenAI acceptance | `.venv/bin/python -m pytest -m "openai and not rag_test" eval/ -q` | One corpus embedding batch plus seven query embeddings and seven generations: at most 15 OpenAI SDK attempts |
-| Paid cross-family semantic evaluation | `.venv/bin/python -m pytest -m "openai and rag_test" --ragaliq-cost-limit 5.00 eval/ -q` | One corpus embedding batch plus six query embeddings and six generations: at most 13 OpenAI SDK attempts; then six answerable cases judged for faithfulness and relevance by RagaliQ's native Claude judge, `claude-opus-5-5` |
+| Paid cross-family semantic evaluation | `.venv/bin/python -m pytest -m "openai and rag_test" --ragaliq-cost-limit 5.00 eval/ -q` | One corpus embedding batch plus six query embeddings and six generations: at most 13 OpenAI SDK attempts; RagaliQ's native Claude judge, `claude-opus-5-5`, judges each of the six answerable cases for faithfulness and relevance after that case's generation |
 
-The module-scoped paid pipeline embeds the corpus once, while each selected parametrized node asks only its own case. For `n` selected nodes from one paid tier, the maximum OpenAI SDK fan-out is `1 + 2n` attempts: one corpus embedding, `n` query embeddings, and `n` generations. A single selected node therefore makes at most 3 attempts. The complete all-golden tier makes at most 15 attempts for seven cases; the complete semantic tier makes at most 13 OpenAI attempts for six answerable cases before RagaliQ judging. Early failures can reduce these counts, and `max_retries=0` prevents OpenAI SDK retries from multiplying them. A timeout does not prove provider-side cancellation, so final cost remains uncertain. RagaliQ's Claude transport retains its own retry behavior and model-output-dependent fan-out.
+The module-scoped paid pipeline embeds the corpus once, while each selected parametrized node asks only its own case. For `n` selected nodes from one paid tier, the maximum OpenAI SDK fan-out is `1 + 2n` attempts: one corpus embedding, `n` query embeddings, and `n` generations. A single selected node therefore makes at most 3 attempts. The complete all-golden tier makes at most 15 attempts for seven cases; the complete semantic tier makes at most 13 OpenAI attempts for six answerable cases, and each case is judged after its own generation. Early failures can reduce these counts, and `max_retries=0` prevents OpenAI SDK retries from multiplying them. A timeout does not prove provider-side cancellation, so final cost remains uncertain. RagaliQ's Claude transport retains its own retry behavior and model-output-dependent fan-out.
 
 ### Markers
 
@@ -269,7 +267,7 @@ The module-scoped paid pipeline embeds the corpus once, while each selected para
 @pytest.mark.rag_test # Paid native RagaliQ Claude judge calls
 ```
 
-The semantic test carries both markers because it judges live OpenAI answers. Before any provider fixture executes, selected `openai` nodes fail if `OPENAI_API_KEY` is unset or empty, and selected `rag_test` nodes fail if `ANTHROPIC_API_KEY` is unset or empty. Credential-free `--collect-only` remains available for inspecting node selection.
+The semantic test carries both markers because it judges live OpenAI answers. After collection and before any test runs, a selection that includes `openai` nodes stops with a usage error if `OPENAI_API_KEY` is unset or empty, and a selection that includes `rag_test` nodes stops the same way if `ANTHROPIC_API_KEY` is unset or empty. Credential-free `--collect-only` remains available for inspecting node selection.
 
 ---
 
@@ -343,14 +341,15 @@ RagaliQ's native pytest plugin supplies `rag_tester`, `ClaudeJudge`, retrying tr
 │   ├── CODEOWNERS               # Review routing for policy and contract surfaces
 │   ├── dependabot.yml           # Weekly grouped GitHub Actions updates
 │   └── workflows/
-│       └── ci.yml               # Locked, secret-free pull-request validation
-├── .pre-commit-config.yaml      # Ruff and repository-hygiene commit hooks
+│       └── ci.yml               # Locked, secret-free pull-request and main validation
+├── .pre-commit-config.yaml      # Ruff, mypy, agent-policy, and repository-hygiene hooks
 ├── .python-version              # Canonical Python 3.15 interpreter line
 ├── .gitignore                   # Secret, environment, index, and cache exclusions
 ├── AGENTS.md                    # Repository guidance, ownership rules, and review checklist
 ├── LICENSE                      # MIT license text
 ├── README.md                    # Setup, contracts, commands, and boundaries
 ├── SECURITY.md                  # Private vulnerability reporting policy
+├── benchmark_retrieval.py       # Free retrieval benchmark on synthetic vectors
 ├── build-constraints.in         # Build tools for locked packages without a Python 3.15 wheel
 ├── build-constraints.txt        # Their pinned, hash-bearing versions for every install
 ├── config.py                    # Model, abstention, retrieval, and index constants
@@ -394,7 +393,7 @@ For compatibility, `load()` also accepts the previous root-level `manifest.json`
 
 ## Development
 
-Ruff is the repository's formatter and linter. Mypy strictly checks the application modules and RagaliQ adapter. Pytest-cov measures branch coverage over the same application/adapter scope and enforces a clean integer `fail_under = 95`; paid provider paths remain excluded. Pre-commit runs the static tools, the repository-hygiene hooks, and one repository-specific gate before commits: `agent-policy-symbols` runs `eval/check_agent_policy_symbols.py`, which resolves every backticked symbol reference in `AGENTS.md` and `.agents/skills/*/SKILL.md` against the names tracked modules actually bind, so a procedure file cannot keep naming a constant that was renamed. It runs over the whole set rather than the changed files, because renaming a constant in a module invalidates a reference in a policy file the same commit never touches. The same check runs as a free-suite node, so a clone that never installs the hook still catches the drift. Every hook uses `uv run --no-sync` and the hash-locked `.venv`; hook execution does not create separate environments or resolve additional packages. The sandbox still has no build backend, package-publication layer, or task runner. uv owns environment creation and exact dependency synchronization.
+Ruff is the repository's formatter and linter. Mypy strictly checks the application modules and RagaliQ adapter. Pytest-cov measures branch coverage over the same application/adapter scope and enforces a clean integer `fail_under = 95`; paid tests stay deselected, so code that only paid paths reach counts as uncovered. Pre-commit runs the static tools, the repository-hygiene hooks, and one repository-specific gate before commits: `agent-policy-symbols` runs `eval/check_agent_policy_symbols.py`, which resolves backticked class, constant, and underscore-prefixed names in `AGENTS.md` and the tracked `.agents/` Markdown files against the names tracked modules bind, so a procedure file cannot keep naming a constant that was renamed. It runs over the whole set rather than the changed files, because renaming a constant in a module invalidates a reference in a policy file the same commit never touches. The same check runs as a free-suite node, so a clone that never installs the hook still catches the drift. Every hook uses `uv run --no-sync` and the hash-locked `.venv`; hook execution does not create separate environments or resolve additional packages. The sandbox still has no build backend, package-publication layer, or task runner. uv owns environment creation and exact dependency synchronization.
 
 GitHub Actions validates every ready pull request against its prospective merge result and validates `main` after each merge. CI installs the hash-locked Python 3.15 environment from a clean checkout, validates the pre-commit configuration, runs every repository hook, and runs the deterministic branch-coverage gate with OpenAI and RagaliQ paid markers explicitly excluded. Provider key variables are explicitly empty throughout the job, and the workflow does not reference provider secrets.
 
@@ -492,10 +491,10 @@ Model and provider integration remains behind explicit paid markers. A failing a
 
 ## Documentation
 
-- [corpus.py](corpus.py) — Executable fixture and golden contract
-- [pipeline.py](pipeline.py) — Runtime data flow and object lifetimes
-- [eval/test_verdigrise.py](eval/test_verdigrise.py) — Deterministic and paid ownership boundaries
-- [eval/ragaliq_adapter.py](eval/ragaliq_adapter.py) — Exact RagaliQ context handoff and free structural runner
+- [corpus.py](corpus.py): Executable fixture and golden contract
+- [pipeline.py](pipeline.py): Runtime data flow and object lifetimes
+- [eval/test_verdigrise.py](eval/test_verdigrise.py): Deterministic and paid ownership boundaries
+- [eval/ragaliq_adapter.py](eval/ragaliq_adapter.py): Exact RagaliQ context handoff and free structural runner
 
 ---
 
@@ -544,15 +543,15 @@ Reproduce every measured number with:
 
 ```bash
 .venv/bin/python benchmark_retrieval.py                          # default grid, peaks near 0.8 GiB
-.venv/bin/python benchmark_retrieval.py --rows 1000 10000 100000 # adds the largest point, peaks near 5 GiB
+.venv/bin/python benchmark_retrieval.py --rows 1000 10000 100000 # n = 1,000, 10,000, and 100,000 only, peaks near 5 GiB
 ```
 
-The default grid stops at `n` = 10,000 so the one-command run is safe on an ordinary machine. The `n` = 100,000 row is opt-in because building an index that size peaks around 5 GiB, which is a cost of the float64 normalization accumulator rather than of the benchmark. Both invocations make no provider calls, need no API key, use synthetic vectors from a pinned seed, and print the machine and library versions they ran on. Timings are machine-specific; the shape of the curve is the finding, not the absolute milliseconds.
+The default grid stops at `n` = 10,000 so the one-command run is safe on an ordinary machine. The `n` = 100,000 row is opt-in because building an index that size peaks around 5 GiB, which is a cost of the float64 normalization accumulator rather than of the benchmark. Both invocations make no provider calls, need no API key, use synthetic vectors from a pinned seed, and print the machine and library versions they ran on. Timings are machine-specific; the finding is the shape of the curve.
 
 | Rung not taken | Why | Cost of not taking it | Scale at which it bites |
 |---|---|---|---|
-| Vector database instead of an in-memory NumPy scan | Normalization, dot product, distance, and tie-breaking stay visible; a backend would mediate all four | The whole matrix is resident: `pipeline.py::NumpyVectorIndex.__init__` stores `float32` rows, so `4 * n * d` bytes. No metadata filter, no incremental upsert, no query language | Measured 585.94 MiB resident at `n` = 100,000, `d` = 1536. Peak is several times that: building the index there took 5,524 MiB, because `pipeline.py::NumpyVectorIndex._normalize` holds the float32 input, a float64 copy, a float64 quotient, and the float32 result at once, then revalidates through another float64 pass |
-| Vectorized top-`k` selection instead of a total sort | `pipeline.py::NumpyVectorIndex.search` sorts by `(-similarity, id)`, and expressing that exact documented tie-break as a readable key is worth more here than selection speed | The key is interpreted Python called once per row, and all `n` rows are ordered to return `TOP_K`, which is 2. This is the operation that ends the design, not the vector math | The sort overtakes the matrix product somewhere in the low tens of rows, and the exact point is **not robustly measurable** on ordinary hardware: at that size both operations cost a few microseconds and trial-to-trial variation exceeds the gap between them. Five trials at `d` = 1536 located it at 32, 8, 32, 32, and 32 rows. That instability is itself the finding, because it says the crossover is not a size at which anything fails. Where it matters is at scale, and there it is stable: at `n` = 100,000, `d` = 1536 the sort dominates the matrix product by roughly a factor of three, consistently across nine runs, though neither figure is stable enough to publish |
+| Vector database instead of an in-memory NumPy scan | Normalization, dot product, distance, and tie-breaking stay visible; a backend would mediate all four | The whole matrix is resident: `pipeline.py::NumpyVectorIndex.index` stores `float32` rows, so `4 * n * d` bytes. No metadata filter, no incremental upsert, no query language | Computed: 585.94 MiB resident at `n` = 100,000, `d` = 1536. Peak is several times that: building the index there took 5,524 MiB, because `pipeline.py::NumpyVectorIndex._normalize` holds the float32 input, a float64 copy, a float64 quotient, and the float32 result at once, then revalidates through another float64 pass |
+| Vectorized top-`k` selection instead of a total sort | `pipeline.py::NumpyVectorIndex.search` sorts by `(-similarity, id)`, and expressing that exact documented tie-break as a readable key is worth more here than selection speed | The key is interpreted Python called once per row, and all `n` rows are ordered to return `TOP_K`, which is 2. This is the operation that ends the design, not the vector math | The sort overtakes the matrix product somewhere in the low tens of rows, and the exact point is not stable enough to pin down on ordinary hardware: at that size both operations cost a few microseconds and trial-to-trial variation exceeds the gap between them. Five trials at `d` = 1536 located it at 32, 8, 32, 32, and 32 rows. That instability is itself the finding, because it says the crossover is not a size at which anything fails. Where it matters is at scale, and there it is stable: at `n` = 100,000, `d` = 1536 the sort dominates the matrix product by roughly a factor of three, consistently across nine runs, though neither figure is stable enough to publish |
 | Approximate nearest neighbour instead of exact search | Exact search has recall 1.0 and no index-build step or tuning parameters to explain | `pipeline.py::NumpyVectorIndex.search` touches every row on every query. Latency is linear in `n` before the sort above dominates it | Measured: at `n` = 100,000 and `d` = 128 the matrix product is around a millisecond inside a search of tens of milliseconds, consistently across nine runs, so exact search is not the binding constraint at any size this sandbox reaches |
 | Document ingestion and chunking | The corpus is an executable fixture, not loader output, so retrieval granularity is authoring granularity | There is no chunking code at all, so one entry is one indivisible retrieval unit. A long document can be represented, since `corpus.py::CorpusEntry.text` is typed as an unrestricted `str` and `validate_corpus` requires only that it be non-blank and UTF-8 encodable, but it would be retrieved whole or not at all, with no sub-document span to cite. Growing the corpus means editing `corpus.py` by hand and hand-authoring a matching fixture vector | Binds immediately: the corpus is 8 entries and every one is hand-written |
 | Incremental index updates | An index that cannot change after construction cannot drift from its fingerprint | `pipeline.py::NumpyVectorIndex.index` raises on a second call, so any corpus change re-embeds the entire corpus in one paid request | Binds at the first corpus edit |
@@ -561,12 +560,12 @@ The default grid stops at `n` = 10,000 so the one-command run is safe on an ordi
 | Request batching and concurrency | The synchronous path is readable top to bottom | `pipeline.py::OpenAIEmbeddingProvider.embed` sends the entire corpus as one `embeddings.create` call with no chunking and no size check, so the ceiling is the provider's per-request input limit rather than anything this repository sets. Not verifiable from repository source | Not measured; the limit is provider-side |
 | Compare-and-swap on the active pointer | Writer-unique staging, `fsync` chains, and atomic publication are taken; only revision checking is not | Two concurrent writers both succeed and the last `os.replace` wins, so a slower writer can overwrite a newer generation's activation | Binds with two concurrent writers |
 | Managed secrets | Keys are read from the process environment and nowhere else, which removes a whole class of accidental commit | `pipeline.py::_require_api_key` reads `OPENAI_API_KEY` directly. No rotation, no scoping, no short-lived credentials, and `ask` output is content-bearing | Not measured; a policy limit rather than a scale limit |
-| Logging, tracing, and metrics | `--debug` prints shapes and stable ids and deliberately withholds text, vectors, and secrets | A paid run that fails before persistence leaves no artifact except the pytest output. One that fails inside `pipeline.py::NumpyVectorIndex.save` after it publishes the generation leaves a complete, content-bearing generation under `.index/generations/` that no pointer references, because the `finally` block cleans only staging paths. There is no timing, no event stream, and no way to reconstruct what a past run did, so distinguishing an orphan from the active generation means reading `active.json` by hand | Not measured; binds the first time a paid run needs a post-mortem |
-| Packaging and deployment | `pyproject.toml` sets `package = false` in `[tool.uv]`, so the only interface is the documented commands | Not installable and has no entry point, which is also why every command carries a `.venv/bin/python` prefix and why Windows is not claimed | Not measured; binds on first use outside this checkout |
+| Logging, tracing, and metrics | `--debug` prints shapes and stable ids and deliberately withholds text, vectors, and secrets | A paid run that fails before persistence leaves no artifact except the pytest output. One that fails inside `pipeline.py::NumpyVectorIndex.save` after it publishes the generation and before it switches the active pointer leaves a complete, content-bearing generation under `.index/generations/` that no pointer references, because the `finally` block cleans only staging paths. There is no timing, no event stream, and no way to reconstruct what a past run did, so distinguishing an orphan from the active generation means reading `active.json` by hand | Not measured; binds the first time a paid run needs a post-mortem |
+| Packaging and deployment | `pyproject.toml` sets `package = false` in `[tool.uv]`, so the only interface is the documented commands | Not installable and has no entry point, which is also why every documented Python invocation carries a `.venv/bin/python` prefix and why Windows is not claimed | Not measured; binds on first use outside this checkout |
 
-Three regimes, not one crossover. A NumPy call costs something fixed before any arithmetic happens: argument parsing, dtype and shape resolution, and BLAS dispatch. Measured at one row, that floor is about 0.0027 ms and is the same at `d` = 12, `d` = 128, and `d` = 1536, because dispatch does not care how wide the vectors are. Below roughly a thousand rows the matrix product is measuring that floor rather than the arithmetic, which is why its cost barely moves across a 128-fold increase in width: about 0.0023 ms against about 0.0035 ms at `n` = 8. By `n` = 10,000 the same comparison is about 0.026 ms against about 2.0 ms, a factor of roughly 75, and the arithmetic is plainly in charge.
+The measurements show three regimes. A NumPy call costs something fixed before any arithmetic happens: argument parsing, dtype and shape resolution, and BLAS dispatch. Measured at one row, that floor is about 0.0027 ms and is the same at `d` = 12, `d` = 128, and `d` = 1536, because dispatch does not care how wide the vectors are. Below roughly a thousand rows the matrix product is measuring that floor rather than the arithmetic, which is why its cost barely moves across a 128-fold increase in width: about 0.0023 ms against about 0.0035 ms at `n` = 8. By `n` = 10,000 the same comparison is about 0.026 ms against about 2.0 ms, a factor of roughly 75, and the arithmetic is plainly in charge.
 
-The regime is the robust result. The crossover between the two operations is not, and this section deliberately does not publish a number for it. It falls in the low tens of rows, where both operations cost single-digit microseconds, and there the difference between them is smaller than the run-to-run variation, so repeated determination on a step-2 grid returns different answers: five trials at `d` = 1536 gave 32, 8, 32, 32, and 32 rows. Publishing a point estimate, or even a tight bracket, would claim a precision the hardware does not deliver. It also would not matter if it did, because a reader who took "the sort wins at fourteen documents" as "this design fails at fourteen documents" would be wrong by four orders of magnitude.
+The regimes are the stable result. The crossover between the two operations is not stable, so this section publishes no number for it. It falls in the low tens of rows, where both operations cost single-digit microseconds, and there the difference between them is smaller than the run-to-run variation, so repeated determination on a step-2 grid returns different answers: five trials at `d` = 1536 gave 32, 8, 32, 32, and 32 rows. Publishing a point estimate, or even a tight bracket, would claim a precision the hardware does not deliver. It also would not matter if it did, because a reader who took "the sort wins at fourteen documents" as "this design fails at fourteen documents" would be wrong by four orders of magnitude.
 
 The decision-relevant number is absolute latency for a single query, and it is stated here without a verdict because this repository sets no latency target. What counts as acceptable is a deployment decision that VerdigrisE does not make.
 
@@ -577,21 +576,21 @@ The decision-relevant number is absolute latency for a single query, and it is s
 | 10,000 | single-digit milliseconds |
 | 100,000 | tens of milliseconds, occasionally past 100 |
 
-No numeric interval is published, and that is a result rather than caution. Two earlier revisions tried: first single values, then the lowest and highest of nine runs per cell with endpoints rounded outward. Both were falsified by the next run. The nine-run ranges were checked cell by cell to contain every observation behind them, and a single further run from a clean clone landed outside four of nine cells immediately.
+No numeric interval is published. Two earlier revisions tried: first single values, then the lowest and highest of nine runs per cell with endpoints rounded outward. Both were falsified by the next run. The nine-run ranges were checked cell by cell to contain every observation behind them, and a single further run from a clean clone landed outside four of nine cells immediately.
 
 Run-to-run spread reaches 41% at 100,000 entries, which is larger than the differences a reader would want an interval to resolve, so any interval drawn from a finite sample is a statement about that sample rather than about the system. Order of magnitude is what survives, and it is stated with its edge rather than as a clean decade. The first three labels held across every one of thirty runs using the documented command. At 100,000 entries the observations cross out of the tens, so that row's label says so; treating it as a clean decade would repeat in one word the error the intervals made in two numbers.
 
-One comparison is robust enough to state. Wider vectors are consistently slower at every size measured: the `d` = 12 and `d` = 1536 observations never overlapped at any corpus size, though both stay within the same order of magnitude. The slowest observations anywhere were at 100,000 entries and `d` = 1536.
+One comparison held in every run. Wider vectors are consistently slower at every size measured: the `d` = 12 and `d` = 1536 observations never overlapped at any corpus size, though both stay within the same order of magnitude. The slowest observations anywhere were at 100,000 entries and `d` = 1536.
 
 This is the same standard already applied to the crossover above, retracted rather than re-bracketed once trial noise exceeded the gap being measured.
 
 Read against a threshold a reader supplies: single-query search is tens of microseconds at the shipped corpus size, a few hundred microseconds at 1,000 entries, single-digit milliseconds at 10,000, and tens of milliseconds at 100,000, occasionally past a hundred. The resident matrix at `n` = 100,000 and `d` = 1536 is 585.94 MiB, which is exact arithmetic on row count and width rather than a timing, and is the one figure here that carries full precision.
 
-One measured fact inverts the expected answer and is the one that applies today. At the size this sandbox actually runs, 8 entries at width 12, the matrix product and the sort together are about 0.0037 ms of an approximately 0.030 ms search, so the two operations that scale account for **at most about an eighth** of it.
+At the free suite's size, 8 entries at fixture width 12, the matrix product and the sort together are about 0.0037 ms of an approximately 0.030 ms search, so the two operations that scale account for at most about an eighth of it.
 
-The remaining seven eighths is deliberately left **unassigned** rather than attributed. Two things prevent attributing it. The isolated matrix product writes through a preallocated buffer and clips in place, while `pipeline.py::NumpyVectorIndex.search` allocates both results, so the isolated figure understates the real one and the difference lands in the remainder. And the three timings are medians aggregated independently, so subtracting them does not yield the median of the difference. The remainder therefore contains query normalization and the construction of two `RetrievedChunk` capture models, but also allocation, method-call overhead, and whatever else `search()` does between its first and last line. Naming only the first two would be an ownership claim the measurement does not support.
+The remaining seven eighths is left unassigned. Two things prevent attributing it. The isolated matrix product writes through a preallocated buffer and clips in place, while `pipeline.py::NumpyVectorIndex.search` allocates both results, so the isolated figure understates the real one and the difference lands in the remainder. And the three timings are medians aggregated independently, so subtracting them does not yield the median of the difference. The remainder therefore contains query normalization and the construction of two `RetrievedChunk` capture models, but also allocation, method-call overhead, and whatever else `search()` does between its first and last line. Naming only the first two would be an ownership claim the measurement does not support.
 
-What survives is the conclusion that matters: at the real corpus size the scaling operations are a minority of an already negligible cost, so optimizing either would change nothing a user could perceive.
+At 8 entries, the scaling operations are a minority of an already negligible cost, so optimizing either would change nothing a user could perceive.
 
 ---
 
@@ -599,12 +598,12 @@ What survives is the conclusion that matters: at the real corpus size the scalin
 
 **Verdigris** + **E**val = **VerdigrisE**
 
-Verdigris is the green patina that surfaces on weathered copper — corrosion made visible. It is also the fixture's central subject: the **verdigris blossom elixir**, a compound whose dosage is prescribed three conflicting ways by three rival grimoires, and whose canonical preparation is distilled in copper. The **E** stands for the evaluation of RAG (Retrieval-Augmented Generation) mechanics that the sandbox exists to make inspectable.
+Verdigris is the green patina that surfaces on weathered copper, a visible sign of corrosion. It is also the fixture's central subject, the verdigris blossom elixir, a compound whose dosage is prescribed three conflicting ways by three rival grimoires, and whose canonical preparation is distilled in copper. The E stands for the evaluation of RAG (Retrieval-Augmented Generation) mechanics that the sandbox exists to make inspectable.
 
-Because a RAG system's most dangerous failures are the ones that never surface. VerdigrisE exists to make wrong-source numbers, swapped near-synonyms, dropped qualifiers, and confident answers-from-nothing visible as exact, repeatable test failures.
+A RAG system's most dangerous failures are the ones that never surface. VerdigrisE exists to make wrong-source numbers, swapped near-synonyms, dropped qualifiers, and confident answers-from-nothing visible as exact, repeatable test failures.
 
 ---
 
 ## License
 
-VerdigrisE is licensed under the [MIT License](LICENSE). The RagaliQ dependency is separately MIT licensed — see [RagaliQ's LICENSE](https://github.com/dariero/RagaliQ/blob/v0.3.0/LICENSE).
+VerdigrisE is licensed under the [MIT License](LICENSE). The RagaliQ dependency is separately MIT licensed; see [RagaliQ's LICENSE](https://github.com/dariero/RagaliQ/blob/v0.3.0/LICENSE).
