@@ -1863,6 +1863,65 @@ def test_legacy_schema_v1_pair_loads_until_a_generation_is_activated(tmp_path: P
     assert _first_hit_id(legacy_directory) == CORPUS[1]["id"]
 
 
+# A schema-1 index written from literals, never from the constants the code reads.
+# A test that builds its expected manifest from INDEX_SCHEMA_VERSION or
+# INDEX_MANIFEST_FILENAME agrees with any value those constants take, so a format
+# change would pass it and strand every index already on disk.
+_SCHEMA_V1_ENTRIES: list[dict[str, object]] = [
+    {
+        "id": "schema-v1-north",
+        "text": "North entry of the schema-1 compatibility index.",
+        "metadata": {"grimoire_id": "GRIM-SCHEMA-V1", "folio": 1},
+    },
+    {
+        "id": "schema-v1-south",
+        "text": "South entry of the schema-1 compatibility index, caf\u00e9 folio.",
+        "metadata": {"grimoire_id": "GRIM-SCHEMA-V1", "folio": "2r"},
+    },
+]
+_SCHEMA_V1_CORPUS_SHA256 = "3394398521648db28baefda010e3b8d34f52ce46f9b695fcc75d54e3be6c348f"
+_SCHEMA_V1_GENERATION_ID = "0123456789abcdef0123456789abcdef"
+
+
+@pytest.mark.parametrize("layout", ["generation", "legacy-root"])
+def test_schema_v1_index_written_from_literals_still_loads(tmp_path: Path, layout: str) -> None:
+    """An index saved under schema 1 stays loadable, in both layouts load() accepts."""
+
+    if layout == "generation":
+        files_directory = tmp_path / "generations" / _SCHEMA_V1_GENERATION_ID
+        files_directory.mkdir(parents=True)
+        (tmp_path / "active.json").write_text(
+            json.dumps({"generation_id": _SCHEMA_V1_GENERATION_ID, "schema_version": 1}) + "\n",
+            encoding="utf-8",
+        )
+    else:
+        files_directory = tmp_path
+    vector_path = files_directory / "vectors.npy"
+    np.save(vector_path, np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32), allow_pickle=False)
+    manifest = {
+        "schema_version": 1,
+        "embedding_model": "text-embedding-3-large",
+        "dimension": 2,
+        "distance_definition": "distance = 1 - cosine_similarity",
+        "tie_break_rule": "descending cosine similarity, then ascending stable chunk id",
+        "corpus_sha256": _SCHEMA_V1_CORPUS_SHA256,
+        "vectors_sha256": hashlib.sha256(vector_path.read_bytes()).hexdigest(),
+        "entries": _SCHEMA_V1_ENTRIES,
+    }
+    (files_directory / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+    loaded = NumpyVectorIndex.load(tmp_path)
+
+    assert loaded.embedding_model == "text-embedding-3-large"
+    assert loaded.dimension == 2
+    hits = loaded.search(np.array([0.0, 1.0], dtype=np.float32), top_k=2)
+    assert [hit.id for hit in hits] == ["schema-v1-south", "schema-v1-north"]
+    assert hits[0].distance == 0.0
+    assert dict(hits[0].metadata) == {"grimoire_id": "GRIM-SCHEMA-V1", "folio": "2r"}
+
+
 @pytest.mark.parametrize(
     ("pointer", "message"),
     [
