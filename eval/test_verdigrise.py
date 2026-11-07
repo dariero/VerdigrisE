@@ -6,8 +6,6 @@ Ownership boundary:
     RagaliQ: faithfulness and answer relevance after deterministic checks pass.
 """
 
-from __future__ import annotations
-
 import ast
 import asyncio
 import hashlib

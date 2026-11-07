@@ -10,8 +10,6 @@ The stage labels are the compact teaching path. Provider injection, persisted
 fingerprints, and capture models retain the base auditability around that path.
 """
 
-from __future__ import annotations
-
 import argparse
 import hashlib
 import json
