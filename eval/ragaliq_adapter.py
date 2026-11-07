@@ -4,8 +4,6 @@ RagaliQ owns semantic residue only. The deterministic suite owns exact ids,
 numbers, citations, prompt bytes, ranking, distances, and abstention.
 """
 
-from __future__ import annotations
-
 import json
 
 from ragaliq import RagaliQ, RAGTestCase

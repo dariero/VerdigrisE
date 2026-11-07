@@ -24,8 +24,6 @@ What this does NOT cover, stated plainly so nobody mistakes it for more:
   is nonetheless the wrong symbol for the sentence still passes.
 """
 
-from __future__ import annotations
-
 import ast
 import builtins
 import re
@@ -72,18 +70,17 @@ def tracked_files() -> list[str]:
     return completed.stdout.split()
 
 
-def agent_policy_files(tracked: list[str] | None = None) -> list[str]:
+def agent_policy_files(tracked: list[str]) -> list[str]:
     """Return the tracked Markdown files that carry agent policy."""
 
-    paths = tracked_files() if tracked is None else tracked
     return sorted(
         path
-        for path in paths
+        for path in tracked
         if path == "AGENTS.md" or (path.startswith(".agents/") and path.endswith(".md"))
     )
 
 
-def known_symbols(tracked: list[str] | None = None) -> set[str]:
+def known_symbols(tracked: list[str]) -> set[str]:
     """Return every name a tracked module binds, quotes, or inherits from builtins.
 
     String literals count because policy prose legitimately names configured
@@ -91,9 +88,8 @@ def known_symbols(tracked: list[str] | None = None) -> set[str]:
     ABSTENTION_PHRASE rather than a symbol, and it is a real reference.
     """
 
-    paths = tracked_files() if tracked is None else tracked
     known: set[str] = set(dir(builtins))
-    for path in (path for path in paths if path.endswith(".py")):
+    for path in (path for path in tracked if path.endswith(".py")):
         tree = ast.parse((PROJECT_ROOT / path).read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):

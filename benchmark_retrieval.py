@@ -74,8 +74,6 @@ prints the machine and library versions it ran on. Do not draw a conclusion that
 depends on a figure sitting on one side of a round threshold.
 """
 
-from __future__ import annotations
-
 import argparse
 import platform
 import resource
@@ -280,16 +278,13 @@ def resolve_crossover(
 
     located: list[int] = []
     for _ in range(trials):
-        previous = None
         for count in CROSSOVER_ROWS:
             record = measure_once(count, width, repeats)
             if record["sort_ms"] >= record["matmul_ms"]:
                 located.append(count)
                 break
-            previous = count
         else:
             located.append(0)
-        _ = previous
     step = CROSSOVER_ROWS[1] - CROSSOVER_ROWS[0]
     found = [value for value in located if value]
     return {
