@@ -74,7 +74,7 @@ uv pip sync --preview-features pylock --require-hashes --build-constraints build
 uv pip check
 ```
 
-`pyproject.toml` is the abstract dependency authority: NumPy, OpenAI, and Pydantic are runtime dependencies; pytest, pytest-cov, and RagaliQ are test/evaluation dependencies; mypy, pre-commit, pre-commit-hooks, and Ruff are development tooling. The committed `uv.lock` preserves uv's solver decisions and dependency graph. The universal, hash-bearing `pylock.toml` is exported from that solver state. Together with `build-constraints.txt`, it is the exact cross-platform public-install contract: the two files pin and hash-check every package file that a clean install downloads. PyYAML 6.0.3 publishes no Python 3.15 wheel, so a clean install builds it from its hash-checked sdist with the setuptools and Cython that `build-constraints.txt` pins and hash-checks; `build-constraints.in` names them. The wheel that this build produces is not hash-checked, and whether it includes PyYAML's optional libyaml extension depends on the host. The current locks are validated and reproduced with uv 0.13.6 for Python 3.15, and install the public `ragaliq==0.3.0` release rather than relying on an adjacent checkout. uv reuses a PyYAML wheel that it built earlier from the same sdist, whichever tools built it, and a sync keeps an installed PyYAML. To rebuild PyYAML with the pinned tools in an existing environment, run `uv cache clean pyyaml`, then the sync with `--reinstall-package pyyaml` added.
+`pyproject.toml` is the abstract dependency authority: NumPy, OpenAI, and Pydantic are runtime dependencies; pytest, pytest-cov, and RagaliQ are test/evaluation dependencies; mypy, pre-commit, pre-commit-hooks, and Ruff are development tooling. The committed `uv.lock` preserves uv's solver decisions and dependency graph. The universal, hash-bearing `pylock.toml` is exported from that solver state. Together with `build-constraints.txt`, it is the exact cross-platform public-install contract: the two files pin and hash-check every package file that a clean install downloads. PyYAML 6.0.3 publishes no Python 3.15 wheel, so a clean install builds it from its hash-checked sdist with the setuptools and Cython that `build-constraints.txt` pins and hash-checks; `build-constraints.in` names them. The wheel that this build produces is not hash-checked, and whether it includes PyYAML's optional libyaml extension depends on the host. The current locks are validated and reproduced with uv 0.13.9 for Python 3.15, and install the public `ragaliq==0.3.0` release rather than relying on an adjacent checkout. uv reuses a PyYAML wheel that it built earlier from the same sdist, whichever tools built it, and a sync keeps an installed PyYAML. To rebuild PyYAML with the pinned tools in an existing environment, run `uv cache clean pyyaml`, then the sync with `--reinstall-package pyyaml` added.
 
 > **Platform support:** The command examples use POSIX shell syntax and paths. The free validation path is exercised locally on macOS and continuously on Ubuntu through GitHub Actions; native Windows command syntax and execution are not currently tested or claimed.
 
@@ -457,10 +457,10 @@ Run the same free suite with deterministic branch coverage over `config.py`, `co
 When dependency metadata changes, update the committed solver state and regenerate its standardized public-install export with the same Python policy:
 
 ```bash
-uvx --from uv==0.13.6 uv lock \
+uvx --from uv==0.13.9 uv lock \
   --python 3.15 \
   --prerelease disallow
-uvx --from uv==0.13.6 uv export \
+uvx --from uv==0.13.9 uv export \
   --frozen \
   --format pylock.toml \
   --all-groups \
@@ -476,7 +476,7 @@ The project export path preserves the selected Python minor in `pylock.toml` as 
 When `build-constraints.in` changes, or when moving the build tools is approved, regenerate the hash-bearing build constraints with the same uv version. Without `--upgrade`, uv keeps the versions already in `build-constraints.txt`; add `--upgrade` only to move them:
 
 ```bash
-uvx --from uv==0.13.6 uv pip compile build-constraints.in \
+uvx --from uv==0.13.9 uv pip compile build-constraints.in \
   --python 3.15 \
   --prerelease disallow \
   --generate-hashes \
